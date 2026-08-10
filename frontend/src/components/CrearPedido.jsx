@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Camera, Upload, Loader2, AlertTriangle, ClipboardList, Plus, Trash2 } from "lucide-react";
+import { useState, useRef, useMemo } from "react";
+import { Camera, Upload, Loader2, AlertTriangle, ClipboardList, Plus, Trash2, Layers } from "lucide-react";
 import { resizeImageToBase64, uid } from "../helpers.js";
 import { api } from "../api.js";
 
@@ -39,6 +39,36 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
   }
   function addManualRow() {
     setItems(prev => [...prev, { id: uid("it"), cantidad: 1, codigo: "", matchStatus: "manual", piso: "" }]);
+  }
+
+  const gruposRepetidos = useMemo(() => {
+    const porCodigo = new Map();
+    for (const it of items) {
+      const clave = (it.codigo || "").trim().toUpperCase();
+      if (!clave) continue;
+      if (!porCodigo.has(clave)) porCodigo.set(clave, []);
+      porCodigo.get(clave).push(it);
+    }
+    return [...porCodigo.values()].filter(grupo => grupo.length > 1);
+  }, [items]);
+
+  function juntarRepetidos() {
+    setItems(prev => {
+      const vistos = new Map(); // clave normalizada -> item ya agregado a "resultado"
+      const resultado = [];
+      for (const it of prev) {
+        const clave = (it.codigo || "").trim().toUpperCase();
+        if (clave && vistos.has(clave)) {
+          const original = vistos.get(clave);
+          original.cantidad = (Number(original.cantidad) || 0) + (Number(it.cantidad) || 0);
+        } else {
+          const copia = { ...it };
+          resultado.push(copia);
+          if (clave) vistos.set(clave, copia);
+        }
+      }
+      return resultado;
+    });
   }
 
   async function handleEnviar() {
@@ -99,6 +129,18 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
       )}
       {errorOcr && (
         <div className="banner banner-warn"><AlertTriangle size={16} /> {errorOcr}</div>
+      )}
+
+      {gruposRepetidos.length > 0 && (
+        <div className="banner banner-warn">
+          <Layers size={16} />
+          <div style={{ flex: 1 }}>
+            <div>Hay {gruposRepetidos.length} código(s) repetido(s) en la lista. ¿Quieres juntarlos y sumar sus cantidades?</div>
+            <button className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={juntarRepetidos}>
+              Juntar códigos repetidos
+            </button>
+          </div>
+        </div>
       )}
 
       {items.length > 0 && (

@@ -1,13 +1,36 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Plus, FileSpreadsheet } from "lucide-react";
+import { Loader2, Plus, FileSpreadsheet, FileText } from "lucide-react";
 import "./styles.css";
 import { api } from "./api.js";
-import { exportarReporteCSV } from "./reporte.js";
+import { exportarReporteCSV, exportarReporteXLSX } from "./reporte.js";
 import LoginScreen from "./components/LoginScreen.jsx";
 import TopBar from "./components/TopBar.jsx";
 import ListaPedidos from "./components/ListaPedidos.jsx";
 import CrearPedido from "./components/CrearPedido.jsx";
 import DetallePedido from "./components/DetallePedido.jsx";
+
+function MenuExportar({ pedidos }) {
+  const [abierto, setAbierto] = useState(false);
+  return (
+    <div style={{ position: "relative" }}>
+      <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }} onClick={() => setAbierto(v => !v)}>
+        <FileSpreadsheet size={13} /> Exportar
+      </button>
+      {abierto && (
+        <div className="card" style={{ position: "absolute", right: 0, top: "110%", zIndex: 10, padding: 6, minWidth: 160 }}>
+          <button className="btn btn-ghost btn-sm" style={{ width: "100%", justifyContent: "flex-start" }}
+            onClick={() => { exportarReporteXLSX(pedidos); setAbierto(false); }}>
+            <FileSpreadsheet size={14} /> Excel (.xlsx)
+          </button>
+          <button className="btn btn-ghost btn-sm" style={{ width: "100%", justifyContent: "flex-start" }}
+            onClick={() => { exportarReporteCSV(pedidos); setAbierto(false); }}>
+            <FileText size={14} /> CSV
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const SESION_KEY = "despacho-sesion";
 
@@ -98,12 +121,7 @@ export default function App() {
                 {user.rol === "vendedor" ? "Tus pedidos enviados al almacén." : "Toma, marca y finaliza los pedidos de los vendedores."}
               </div>
             </div>
-            {user.rol === "almacenero" && (
-              <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }}
-                onClick={() => exportarReporteCSV(pedidos)}>
-                <FileSpreadsheet size={13} /> Exportar
-              </button>
-            )}
+            {user.rol === "almacenero" && <MenuExportar pedidos={pedidos} />}
           </div>
           <ListaPedidos pedidos={pedidos} user={user} onOpen={abrirPedido} loading={cargandoPedidos} />
         </div>

@@ -126,10 +126,17 @@ body { background:#12151b; }
   .status-tomado{ color:var(--teal); border-color:var(--teal-dim); background:rgba(63,198,193,0.10); }
   .status-finalizado{ color:var(--green); border-color:var(--green-dim); background:rgba(62,207,126,0.10); }
   .filter-bar{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
-  .filter-bar input[type=date], .filter-bar input[type=text]{
+  .filter-bar input[type=date], .filter-bar input[type=text], .filter-bar select{
     background:var(--surface2); border:1px solid var(--border); color:var(--text);
     padding:9px 11px; border-radius:9px; font-size:13px; flex:1; min-width:130px;
   }
+  .filter-bar select{ min-width:150px; }
+  .name-chip{
+    font-size:10.5px; font-weight:700; letter-spacing:0.02em; padding:3px 8px; border-radius:20px;
+    border:1px solid; white-space:nowrap;
+  }
+  .name-chip.vendedor{ color:var(--teal); border-color:var(--teal-dim); background:rgba(63,198,193,0.08); }
+  .name-chip.almacenero{ color:var(--amber); border-color:var(--amber-dim); background:rgba(242,169,59,0.08); }
   .tabs{ display:flex; gap:6px; margin-bottom:14px; border-bottom:1px solid var(--border); }
   .tab-btn{
     background:none; border:none; color:var(--muted); font-size:13px; font-weight:700;

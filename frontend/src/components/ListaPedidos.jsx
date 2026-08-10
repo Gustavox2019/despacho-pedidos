@@ -9,39 +9,74 @@ function coincideDia(pedido, fecha) {
   return iso === fecha;
 }
 
+function valoresUnicos(pedidos, campo) {
+  const set = new Set();
+  for (const p of pedidos) if (p[campo]) set.add(p[campo]);
+  return [...set].sort();
+}
+
+function FiltrosPedidos({ pedidos, filtros, setFiltros, mostrarFiltroVendedor, mostrarFiltroAlmacenero }) {
+  const vendedores = useMemo(() => valoresUnicos(pedidos, "vendedorNombre"), [pedidos]);
+  const almaceneros = useMemo(() => valoresUnicos(pedidos, "almaceneroNombre"), [pedidos]);
+
+  return (
+    <div className="filter-bar">
+      <input type="date" value={filtros.fecha} onChange={e => setFiltros(f => ({ ...f, fecha: e.target.value }))} />
+      <input type="text" placeholder="Cliente…" value={filtros.cliente}
+        onChange={e => setFiltros(f => ({ ...f, cliente: e.target.value }))} />
+      <input type="text" placeholder="ID pedido…" value={filtros.idPedido}
+        onChange={e => setFiltros(f => ({ ...f, idPedido: e.target.value }))} />
+      {mostrarFiltroVendedor && (
+        <select value={filtros.vendedor} onChange={e => setFiltros(f => ({ ...f, vendedor: e.target.value }))}>
+          <option value="">Todos los vendedores</option>
+          {vendedores.map(v => <option key={v} value={v}>{v}</option>)}
+        </select>
+      )}
+      {mostrarFiltroAlmacenero && (
+        <select value={filtros.almacenero} onChange={e => setFiltros(f => ({ ...f, almacenero: e.target.value }))}>
+          <option value="">Todos los almaceneros</option>
+          {almaceneros.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+      )}
+    </div>
+  );
+}
+
+const FILTROS_VACIOS = { fecha: "", cliente: "", idPedido: "", vendedor: "", almacenero: "" };
+
+function aplicarFiltros(lista, filtros) {
+  let out = lista.filter(p => coincideDia(p, filtros.fecha));
+  if (filtros.cliente.trim()) {
+    const q = filtros.cliente.trim().toLowerCase();
+    out = out.filter(p => p.cliente.toLowerCase().includes(q));
+  }
+  if (filtros.idPedido.trim()) {
+    const q = filtros.idPedido.trim().toLowerCase();
+    out = out.filter(p => p.id.toLowerCase().includes(q));
+  }
+  if (filtros.vendedor) out = out.filter(p => p.vendedorNombre === filtros.vendedor);
+  if (filtros.almacenero) out = out.filter(p => p.almaceneroNombre === filtros.almacenero);
+  return out;
+}
+
 export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
   const esVendedor = user.rol === "vendedor";
-  const [fecha, setFecha] = useState("");
-  const [busquedaCliente, setBusquedaCliente] = useState("");
+  const [filtros, setFiltros] = useState(FILTROS_VACIOS);
   const [tab, setTab] = useState("pendientes"); // pendientes | mis-tomados | todos
 
   const filtrados = useMemo(() => {
     let lista = [...pedidos];
-
-    if (esVendedor) {
-      lista = lista.filter(p => coincideDia(p, fecha));
-      if (busquedaCliente.trim()) {
-        const q = busquedaCliente.trim().toLowerCase();
-        lista = lista.filter(p => p.cliente.toLowerCase().includes(q));
-      }
-    } else {
+    if (!esVendedor) {
       if (tab === "pendientes") lista = lista.filter(p => p.estado === "pendiente");
       else if (tab === "mis-tomados") lista = lista.filter(p => p.almaceneroId === user.id && p.estado !== "pendiente");
-      // "todos" no filtra
     }
-
+    lista = aplicarFiltros(lista, filtros);
     return lista.sort((a, b) => b.creadoEn - a.creadoEn);
-  }, [pedidos, esVendedor, fecha, busquedaCliente, tab, user.id]);
+  }, [pedidos, esVendedor, filtros, tab, user.id]);
 
   return (
     <div>
-      {esVendedor ? (
-        <div className="filter-bar">
-          <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
-          <input type="text" placeholder="Buscar por cliente…" value={busquedaCliente}
-            onChange={e => setBusquedaCliente(e.target.value)} />
-        </div>
-      ) : (
+      {!esVendedor && (
         <div className="tabs">
           <button className={`tab-btn ${tab === "pendientes" ? "active" : ""}`} onClick={() => setTab("pendientes")}>Pendientes</button>
           <button className={`tab-btn ${tab === "mis-tomados" ? "active" : ""}`} onClick={() => setTab("mis-tomados")}>Tomados por mí</button>
@@ -49,15 +84,23 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
         </div>
       )}
 
+      <FiltrosPedidos
+        pedidos={pedidos}
+        filtros={filtros}
+        setFiltros={setFiltros}
+        mostrarFiltroVendedor={esVendedor ? false : true}
+        mostrarFiltroAlmacenero={esVendedor ? true : false}
+      />
+
       {loading ? (
         <div className="empty-state"><Loader2 className="spin" size={26} /></div>
       ) : filtrados.length === 0 ? (
         <div className="empty-state">
           <ClipboardList size={30} style={{ opacity: 0.4, marginBottom: 10 }} />
           <div>
-            {esVendedor
-              ? (pedidos.length === 0 ? "Aún no creaste ningún pedido." : "Ningún pedido coincide con el filtro.")
-              : "No hay pedidos en esta pestaña."}
+            {pedidos.length === 0
+              ? (esVendedor ? "Aún no creaste ningún pedido." : "No hay pedidos por ahora.")
+              : "Ningún pedido coincide con el filtro."}
           </div>
         </div>
       ) : (
@@ -69,9 +112,10 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="pedido-id">{p.id}</div>
                 <div className="pedido-cliente">{p.cliente}</div>
-                <div className="pedido-meta">
-                  {esVendedor ? `${p.items.length} códigos` : `Vendedor: ${p.vendedorNombre}`} · {fmtTime(p.creadoEn)}
-                  {p.almaceneroNombre && !esVendedor && ` · Tomado por ${p.almaceneroNombre}`}
+                <div className="pedido-meta">{p.items.length} códigos · {fmtTime(p.creadoEn)}</div>
+                <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                  <span className="name-chip vendedor">V: {p.vendedorNombre}</span>
+                  {p.almaceneroNombre && <span className="name-chip almacenero">A: {p.almaceneroNombre}</span>}
                 </div>
               </div>
               <span className={`status-pill status-${p.estado}`}>
