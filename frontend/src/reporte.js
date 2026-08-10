@@ -5,6 +5,10 @@ function fechaCorta(ts) {
   return d.toLocaleDateString("es-PE", { year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
+function isoDia(ts) {
+  return new Date(ts).toISOString().slice(0, 10);
+}
+
 const ENCABEZADO = [
   "Fecha", "ID Pedido", "Cliente", "Vendedor", "Almacenero", "Cajas",
   "Cantidad", "Codigo", "Piso", "Check", "Detalle"
@@ -12,10 +16,26 @@ const ENCABEZADO = [
 
 // Arma las filas planas (una por producto separado) de los pedidos
 // finalizados, agrupadas por fecha — sirve tanto para CSV como para Excel.
-function construirFilas(pedidos) {
-  const finalizados = pedidos
-    .filter(p => p.estado === "finalizado")
-    .sort((a, b) => (a.finalizadoEn || a.creadoEn) - (b.finalizadoEn || b.creadoEn));
+// filtro: { fechaDesde, fechaHasta, cliente } — todo opcional; sin fechas = toda la data.
+function construirFilas(pedidos, filtro = {}) {
+  const { fechaDesde, fechaHasta, cliente } = filtro;
+
+  let finalizados = pedidos.filter(p => p.estado === "finalizado");
+
+  if (fechaDesde || fechaHasta) {
+    finalizados = finalizados.filter(p => {
+      const iso = isoDia(p.finalizadoEn || p.creadoEn);
+      if (fechaDesde && iso < fechaDesde) return false;
+      if (fechaHasta && iso > fechaHasta) return false;
+      return true;
+    });
+  }
+  if (cliente && cliente.trim()) {
+    const q = cliente.trim().toLowerCase();
+    finalizados = finalizados.filter(p => p.cliente.toLowerCase().includes(q));
+  }
+
+  finalizados.sort((a, b) => (a.finalizadoEn || a.creadoEn) - (b.finalizadoEn || b.creadoEn));
 
   const filas = [ENCABEZADO];
   for (const p of finalizados) {
@@ -53,8 +73,8 @@ function nombreArchivo(ext) {
 }
 
 // CSV (se abre directo en Excel / Google Sheets)
-export function exportarReporteCSV(pedidos) {
-  const filas = construirFilas(pedidos);
+export function exportarReporteCSV(pedidos, filtro) {
+  const filas = construirFilas(pedidos, filtro);
   const csv = "\uFEFF" + filas.map(fila => fila.map(csvEscape).join(";")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -66,8 +86,8 @@ export function exportarReporteCSV(pedidos) {
 }
 
 // Excel real (.xlsx), con columnas ajustadas
-export function exportarReporteXLSX(pedidos) {
-  const filas = construirFilas(pedidos);
+export function exportarReporteXLSX(pedidos, filtro) {
+  const filas = construirFilas(pedidos, filtro);
   const hoja = XLSX.utils.aoa_to_sheet(filas);
   hoja["!cols"] = [
     { wch: 11 }, { wch: 11 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 7 },

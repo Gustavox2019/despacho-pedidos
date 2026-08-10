@@ -11,19 +11,64 @@ import DetallePedido from "./components/DetallePedido.jsx";
 
 function MenuExportar({ pedidos }) {
   const [abierto, setAbierto] = useState(false);
+  const [todaLaData, setTodaLaData] = useState(false);
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
+  const [cliente, setCliente] = useState("");
+
+  const puedeExportar = todaLaData || (fechaDesde && fechaHasta);
+
+  function construirFiltro() {
+    return todaLaData
+      ? { cliente }
+      : { fechaDesde, fechaHasta, cliente };
+  }
+
+  function descargar(fn) {
+    fn(pedidos, construirFiltro());
+    setAbierto(false);
+  }
+
   return (
     <div style={{ position: "relative" }}>
       <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }} onClick={() => setAbierto(v => !v)}>
         <FileSpreadsheet size={13} /> Exportar
       </button>
       {abierto && (
-        <div className="card" style={{ position: "absolute", right: 0, top: "110%", zIndex: 10, padding: 6, minWidth: 160 }}>
+        <div className="card" style={{ position: "absolute", right: 0, top: "110%", zIndex: 10, padding: 14, width: 240 }}>
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", textTransform: "none", fontSize: 12.5 }}>
+              <input type="checkbox" checked={todaLaData} onChange={e => setTodaLaData(e.target.checked)} />
+              Exportar toda la data
+            </label>
+          </div>
+          {!todaLaData && (
+            <>
+              <div className="field" style={{ marginBottom: 8 }}>
+                <label>Desde *</label>
+                <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} />
+              </div>
+              <div className="field" style={{ marginBottom: 8 }}>
+                <label>Hasta *</label>
+                <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} />
+              </div>
+            </>
+          )}
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label>Cliente (opcional)</label>
+            <input type="text" placeholder="Todos" value={cliente} onChange={e => setCliente(e.target.value)} />
+          </div>
+          {!puedeExportar && (
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 8 }}>
+              Elige un rango de fechas, o marca "Exportar toda la data".
+            </div>
+          )}
           <button className="btn btn-ghost btn-sm" style={{ width: "100%", justifyContent: "flex-start" }}
-            onClick={() => { exportarReporteXLSX(pedidos); setAbierto(false); }}>
+            disabled={!puedeExportar} onClick={() => descargar(exportarReporteXLSX)}>
             <FileSpreadsheet size={14} /> Excel (.xlsx)
           </button>
           <button className="btn btn-ghost btn-sm" style={{ width: "100%", justifyContent: "flex-start" }}
-            onClick={() => { exportarReporteCSV(pedidos); setAbierto(false); }}>
+            disabled={!puedeExportar} onClick={() => descargar(exportarReporteCSV)}>
             <FileText size={14} /> CSV
           </button>
         </div>

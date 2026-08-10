@@ -4,9 +4,15 @@ import { fmtTime } from "../helpers.js";
 
 function coincideDia(pedido, fecha) {
   if (!fecha) return true;
-  const d = new Date(pedido.creadoEn);
-  const iso = d.toISOString().slice(0, 10);
+  const iso = new Date(pedido.creadoEn).toISOString().slice(0, 10);
   return iso === fecha;
+}
+
+function coincideRango(pedido, desde, hasta) {
+  const iso = new Date(pedido.creadoEn).toISOString().slice(0, 10);
+  if (desde && iso < desde) return false;
+  if (hasta && iso > hasta) return false;
+  return true;
 }
 
 function valoresUnicos(pedidos, campo) {
@@ -15,13 +21,23 @@ function valoresUnicos(pedidos, campo) {
   return [...set].sort();
 }
 
-function FiltrosPedidos({ pedidos, filtros, setFiltros, mostrarFiltroVendedor, mostrarFiltroAlmacenero }) {
+const FILTROS_VACIOS = { fecha: "", fechaDesde: "", fechaHasta: "", cliente: "", idPedido: "", vendedor: "", almacenero: "" };
+
+function FiltrosPedidos({ pedidos, filtros, setFiltros, modo, mostrarFiltroVendedor, mostrarFiltroAlmacenero }) {
   const vendedores = useMemo(() => valoresUnicos(pedidos, "vendedorNombre"), [pedidos]);
   const almaceneros = useMemo(() => valoresUnicos(pedidos, "almaceneroNombre"), [pedidos]);
 
   return (
     <div className="filter-bar">
-      <input type="date" value={filtros.fecha} onChange={e => setFiltros(f => ({ ...f, fecha: e.target.value }))} />
+      {modo === "dia" && (
+        <input type="date" value={filtros.fecha} onChange={e => setFiltros(f => ({ ...f, fecha: e.target.value }))} />
+      )}
+      {modo === "rango" && (
+        <>
+          <input type="date" title="Desde" value={filtros.fechaDesde} onChange={e => setFiltros(f => ({ ...f, fechaDesde: e.target.value }))} />
+          <input type="date" title="Hasta" value={filtros.fechaHasta} onChange={e => setFiltros(f => ({ ...f, fechaHasta: e.target.value }))} />
+        </>
+      )}
       <input type="text" placeholder="Cliente…" value={filtros.cliente}
         onChange={e => setFiltros(f => ({ ...f, cliente: e.target.value }))} />
       <input type="text" placeholder="ID pedido…" value={filtros.idPedido}
@@ -42,10 +58,10 @@ function FiltrosPedidos({ pedidos, filtros, setFiltros, mostrarFiltroVendedor, m
   );
 }
 
-const FILTROS_VACIOS = { fecha: "", cliente: "", idPedido: "", vendedor: "", almacenero: "" };
-
-function aplicarFiltros(lista, filtros) {
-  let out = lista.filter(p => coincideDia(p, filtros.fecha));
+function aplicarFiltros(lista, filtros, modoFecha) {
+  let out = lista;
+  if (modoFecha === "dia") out = out.filter(p => coincideDia(p, filtros.fecha));
+  else if (modoFecha === "rango") out = out.filter(p => coincideRango(p, filtros.fechaDesde, filtros.fechaHasta));
   if (filtros.cliente.trim()) {
     const q = filtros.cliente.trim().toLowerCase();
     out = out.filter(p => p.cliente.toLowerCase().includes(q));
@@ -64,15 +80,19 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
   const [tab, setTab] = useState("pendientes"); // pendientes | mis-tomados | todos
 
+  // Pendientes: sin filtro de fecha. Tomados por mí / Todos: rango de fecha.
+  // Vendedor: un solo día.
+  const modoFecha = esVendedor ? "dia" : (tab === "pendientes" ? "ninguno" : "rango");
+
   const filtrados = useMemo(() => {
     let lista = [...pedidos];
     if (!esVendedor) {
       if (tab === "pendientes") lista = lista.filter(p => p.estado === "pendiente");
       else if (tab === "mis-tomados") lista = lista.filter(p => p.almaceneroId === user.id && p.estado !== "pendiente");
     }
-    lista = aplicarFiltros(lista, filtros);
+    lista = aplicarFiltros(lista, filtros, modoFecha);
     return lista.sort((a, b) => b.creadoEn - a.creadoEn);
-  }, [pedidos, esVendedor, filtros, tab, user.id]);
+  }, [pedidos, esVendedor, filtros, tab, user.id, modoFecha]);
 
   return (
     <div>
@@ -88,8 +108,9 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
         pedidos={pedidos}
         filtros={filtros}
         setFiltros={setFiltros}
-        mostrarFiltroVendedor={esVendedor ? false : true}
-        mostrarFiltroAlmacenero={esVendedor ? true : false}
+        modo={modoFecha}
+        mostrarFiltroVendedor={!esVendedor}
+        mostrarFiltroAlmacenero={esVendedor}
       />
 
       {loading ? (
