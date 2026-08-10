@@ -31,7 +31,7 @@ router.post("/", async (req, res) => {
       cliente,
       vendedorId,
       vendedorNombre,
-      estado: "enviado",
+      estado: "pendiente",
       items: items.map((it, i) => ({
         id: it.id || `it-${i}`,
         cantidad: Number(it.cantidad) || 1,
@@ -55,10 +55,14 @@ router.post("/", async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const { vendedorId } = req.query;
-    let query = db.collection("pedidos").orderBy("creadoEn", "desc");
+    // Ordenamos aquí mismo en vez de pedírselo a Firestore, así no
+    // necesitamos crear ningún índice compuesto en la consola de Firebase.
+    let query = db.collection("pedidos");
     if (vendedorId) query = query.where("vendedorId", "==", vendedorId);
     const snap = await query.get();
-    res.json(snap.docs.map(d => d.data()));
+    const lista = snap.docs.map(d => d.data());
+    lista.sort((a, b) => (b.creadoEn || 0) - (a.creadoEn || 0));
+    res.json(lista);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "No se pudieron listar los pedidos." });

@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, FileSpreadsheet } from "lucide-react";
 import "./styles.css";
 import { api } from "./api.js";
+import { exportarReporteCSV } from "./reporte.js";
 import LoginScreen from "./components/LoginScreen.jsx";
 import TopBar from "./components/TopBar.jsx";
 import ListaPedidos from "./components/ListaPedidos.jsx";
@@ -52,15 +53,23 @@ export default function App() {
     setVista("home");
   }
 
+  const [errorCrear, setErrorCrear] = useState("");
+
   async function crearPedido({ cliente, items }) {
-    const nuevoPedido = await api.crearPedido({
-      cliente,
-      vendedorId: user.id,
-      vendedorNombre: user.nombre,
-      items
-    });
-    setPedidoActivoId(nuevoPedido.id);
-    setVista("detalle");
+    setErrorCrear("");
+    try {
+      const nuevoPedido = await api.crearPedido({
+        cliente,
+        vendedorId: user.id,
+        vendedorNombre: user.nombre,
+        items
+      });
+      setPedidoActivoId(nuevoPedido.id);
+      setVista("detalle");
+    } catch (err) {
+      console.error("Error al crear pedido:", err);
+      setErrorCrear(err.message || "No se pudo enviar el pedido. Intenta de nuevo.");
+    }
   }
 
   function abrirPedido(id) {
@@ -82,16 +91,26 @@ export default function App() {
 
       {vista === "home" && (
         <div className="container">
-          <div className="page-title">{user.rol === "vendedor" ? `Hola, ${user.nombre.split(" ")[0]}` : "Pedidos por despachar"}</div>
-          <div className="page-sub">
-            {user.rol === "vendedor" ? "Tus pedidos enviados al almacén." : "Revisa, marca y finaliza los pedidos de los vendedores."}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+            <div>
+              <div className="page-title">{user.rol === "vendedor" ? `Hola, ${user.nombre.split(" ")[0]}` : "Pedidos por despachar"}</div>
+              <div className="page-sub">
+                {user.rol === "vendedor" ? "Tus pedidos enviados al almacén." : "Toma, marca y finaliza los pedidos de los vendedores."}
+              </div>
+            </div>
+            {user.rol === "almacenero" && (
+              <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }}
+                onClick={() => exportarReporteCSV(pedidos)}>
+                <FileSpreadsheet size={13} /> Exportar
+              </button>
+            )}
           </div>
           <ListaPedidos pedidos={pedidos} user={user} onOpen={abrirPedido} loading={cargandoPedidos} />
         </div>
       )}
 
       {vista === "crear" && (
-        <CrearPedido onCreado={crearPedido} onCancelar={() => setVista("home")} />
+        <CrearPedido onCreado={crearPedido} onCancelar={() => setVista("home")} errorEnvio={errorCrear} />
       )}
 
       {vista === "detalle" && pedidoActivoId && (

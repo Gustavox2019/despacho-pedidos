@@ -3,13 +3,15 @@ import { Camera, Upload, Loader2, AlertTriangle, ClipboardList, Plus, Trash2 } f
 import { resizeImageToBase64, uid } from "../helpers.js";
 import { api } from "../api.js";
 
-export default function CrearPedido({ onCreado, onCancelar }) {
+export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
   const [cliente, setCliente] = useState("");
   const [imgPreview, setImgPreview] = useState(null);
   const [analizando, setAnalizando] = useState(false);
   const [errorOcr, setErrorOcr] = useState("");
   const [items, setItems] = useState([]);
-  const fileRef = useRef(null);
+  const [enviando, setEnviando] = useState(false);
+  const fileRefCamara = useRef(null);
+  const fileRefGaleria = useRef(null);
 
   async function handleFile(e) {
     const file = e.target.files[0];
@@ -39,7 +41,16 @@ export default function CrearPedido({ onCreado, onCancelar }) {
     setItems(prev => [...prev, { id: uid("it"), cantidad: 1, codigo: "", matchStatus: "manual", piso: "" }]);
   }
 
-  const puedeEnviar = cliente.trim() && items.length > 0 && items.every(it => it.codigo.trim());
+  async function handleEnviar() {
+    setEnviando(true);
+    try {
+      await onCreado({ cliente: cliente.trim(), items });
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  const puedeEnviar = cliente.trim() && items.length > 0 && items.every(it => it.codigo.trim()) && !enviando;
 
   return (
     <div className="container">
@@ -54,20 +65,33 @@ export default function CrearPedido({ onCreado, onCancelar }) {
       <div className="field">
         <label>Lista del pedido</label>
         {!imgPreview ? (
-          <div className="upload-zone" onClick={() => fileRef.current?.click()}>
-            <Camera size={26} style={{ marginBottom: 8, opacity: 0.7 }} />
-            <div style={{ fontWeight: 700, fontSize: 13.5 }}>Tomar foto o subir imagen</div>
-            <div style={{ fontSize: 11.5, marginTop: 4, opacity: 0.7 }}>Foto a mano o captura de Excel</div>
+          <div className="upload-options">
+            <div className="upload-opt-btn" onClick={() => fileRefCamara.current?.click()}>
+              <Camera size={24} />
+              <div style={{ fontWeight: 700, fontSize: 13 }}>Tomar foto</div>
+            </div>
+            <div className="upload-opt-btn" onClick={() => fileRefGaleria.current?.click()}>
+              <Upload size={24} />
+              <div style={{ fontWeight: 700, fontSize: 13 }}>Elegir de galería</div>
+            </div>
           </div>
         ) : (
           <>
             <img src={imgPreview} className="upload-preview" alt="Lista subida" />
-            <button className="btn btn-outline btn-sm" onClick={() => fileRef.current?.click()}>
-              <Upload size={13} /> Cambiar imagen
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-outline btn-sm" onClick={() => fileRefCamara.current?.click()}>
+                <Camera size={13} /> Tomar otra foto
+              </button>
+              <button className="btn btn-outline btn-sm" onClick={() => fileRefGaleria.current?.click()}>
+                <Upload size={13} /> Elegir otra
+              </button>
+            </div>
           </>
         )}
-        <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleFile} />
+        {/* capture="environment" abre la cámara directamente en celulares */}
+        <input ref={fileRefCamara} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleFile} />
+        {/* sin "capture" para que el navegador muestre la galería/explorador de archivos */}
+        <input ref={fileRefGaleria} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFile} />
       </div>
 
       {analizando && (
@@ -112,11 +136,15 @@ export default function CrearPedido({ onCreado, onCancelar }) {
         <Plus size={13} /> Agregar línea manual
       </button>
 
+      {errorEnvio && (
+        <div className="banner banner-warn"><AlertTriangle size={16} /> {errorEnvio}</div>
+      )}
+
       <div style={{ display: "flex", gap: 10, marginTop: 26 }}>
         <button className="btn btn-outline" onClick={onCancelar}>Cancelar</button>
         <button className="btn btn-primary" style={{ flex: 1 }} disabled={!puedeEnviar}
-          onClick={() => onCreado({ cliente: cliente.trim(), items })}>
-          Enviar pedido al almacén
+          onClick={handleEnviar}>
+          {enviando ? <Loader2 className="spin" size={15} /> : "Enviar pedido al almacén"}
         </button>
       </div>
     </div>

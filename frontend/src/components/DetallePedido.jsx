@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, CheckCheck, ClipboardList, CheckCircle2, XCircle,
-  Boxes, Download, MessageSquare, ChevronLeft
+  Boxes, Download, MessageSquare, ChevronLeft, PackageCheck
 } from "lucide-react";
 import { fmtTime } from "../helpers.js";
 import { api } from "../api.js";
@@ -12,10 +12,13 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   const [pedido, setPedido] = useState(null);
   const [cajasInput, setCajasInput] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [tomando, setTomando] = useState(false);
+  const pedidoRef = useRef(null); // última versión conocida, para no pisar ediciones locales con el poll
 
   const cargar = useCallback(async () => {
     try {
       const p = await api.obtenerPedido(pedidoId);
+      pedidoRef.current = p;
       setPedido(p);
       if (p.cajas) setCajasInput(String(p.cajas));
     } catch (e) { /* se reintenta en el próximo poll */ }
@@ -23,7 +26,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
 
   useEffect(() => {
     cargar();
-    const iv = setInterval(cargar, 4000);
+    const iv = setInterval(cargar, 6000);
     return () => clearInterval(iv);
   }, [cargar]);
 
@@ -31,25 +34,52 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     (async () => {
       if (pedido && user.rol === "vendedor" && pedido.estado === "finalizado" && !pedido.vistoPorVendedor) {
         const actualizado = await api.actualizarPedido(pedidoId, { vistoPorVendedor: true });
+        pedidoRef.current = actualizado;
         setPedido(actualizado);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pedido?.estado, pedido?.vistoPorVendedor]);
 
-  async function guardarPedido(patch) {
+  // Envía el cambio en segundo plano, sin bloquear la interacción del usuario.
+  function guardarEnSegundoPlano(patch) {
+    api.actualizarPedido(pedidoId, patch)
+      .then(actualizado => { pedidoRef.current = actualizado; })
+      .catch(err => console.error("No se pudo guardar:", err));
+  }
+
+  function updateItemCheck(itemId, patch) {
+    // Actualización optimista: se ve al instante, se guarda de fondo.
+    const nuevosItems = pedido.items.map(it => it.id === itemId ? { ...it, ...patch } : it);
+    const actualizadoLocal = { ...pedido, items: nuevosItems };
+    setPedido(actualizadoLocal);
+    guardarEnSegundoPlano({ items: nuevosItems });
+  }
+
+  async function tomarPedido() {
+    setTomando(true);
+    try {
+      const actualizado = await api.actualizarPedido(pedidoId, {
+        estado: "tomado", almaceneroId: user.id, almaceneroNombre: user.nombre, tomadoEn: Date.now()
+      });
+      pedidoRef.current = actualizado;
+      setPedido(actualizado);
+    } finally {
+      setTomando(false);
+    }
+  }
+
+  async function finalizar() {
     setGuardando(true);
     try {
-      const actualizado = await api.actualizarPedido(pedidoId, patch);
+      const actualizado = await api.actualizarPedido(pedidoId, {
+        estado: "finalizado", cajas: Number(cajasInput), finalizadoEn: Date.now(), vistoPorVendedor: false
+      });
+      pedidoRef.current = actualizado;
       setPedido(actualizado);
     } finally {
       setGuardando(false);
     }
-  }
-
-  function updateItemCheck(itemId, patch) {
-    const nuevosItems = pedido.items.map(it => it.id === itemId ? { ...it, ...patch } : it);
-    guardarPedido({ items: nuevosItems });
   }
 
   if (!pedido) {
@@ -57,13 +87,11 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   }
 
   const esAlmacenero = user.rol === "almacenero";
+  const esPedidoTomadoPorMi = pedido.almaceneroId === user.id;
+  const puedeMarcar = esAlmacenero && pedido.estado === "tomado" && esPedidoTomadoPorMi;
   const todosMarcados = pedido.items.every(it => it.check === "ok" || it.check === "no");
   const cajasValidas = Number(cajasInput) > 0;
-  const puedeFinalizar = todosMarcados && cajasValidas && pedido.estado === "enviado";
-
-  async function finalizar() {
-    await guardarPedido({ estado: "finalizado", cajas: Number(cajasInput), finalizadoEn: Date.now(), vistoPorVendedor: false, almaceneroNombre: user.nombre });
-  }
+  const puedeFinalizar = puedeMarcar && todosMarcados && cajasValidas;
 
   return (
     <div className="container">
@@ -72,17 +100,39 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
       <div className="page-sub">
         Vendedor: {pedido.vendedorNombre} · {fmtTime(pedido.creadoEn)}{" "}
         <span className={`status-pill status-${pedido.estado}`} style={{ marginLeft: 6 }}>
-          {pedido.estado === "enviado" ? "En proceso" : "Finalizado"}
+          {pedido.estado === "pendiente" && "Pendiente"}
+          {pedido.estado === "tomado" && "En proceso"}
+          {pedido.estado === "finalizado" && "Finalizado"}
         </span>
       </div>
+
+      {pedido.estado !== "pendiente" && pedido.almaceneroNombre && (
+        <div className="banner banner-warn" style={{ background: "rgba(63,198,193,0.08)", borderColor: "var(--teal-dim)", color: "var(--teal)" }}>
+          <PackageCheck size={16} />
+          <div>Tomado por {pedido.almaceneroNombre}{pedido.tomadoEn ? ` · ${fmtTime(pedido.tomadoEn)}` : ""}</div>
+        </div>
+      )}
 
       {pedido.estado === "finalizado" && user.rol === "vendedor" && (
         <div className="banner banner-success">
           <CheckCheck size={16} />
-          <div>
-            Pedido finalizado por {pedido.almaceneroNombre || "almacén"} · {pedido.cajas} caja(s) preparadas.
-          </div>
+          <div>Pedido finalizado por {pedido.almaceneroNombre || "almacén"} · {pedido.cajas} caja(s) preparadas.</div>
         </div>
+      )}
+
+      {esAlmacenero && pedido.estado === "pendiente" && (
+        <div className="card" style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
+            Nadie ha tomado este pedido todavía.
+          </div>
+          <button className="btn btn-primary btn-block" disabled={tomando} onClick={tomarPedido}>
+            {tomando ? <Loader2 className="spin" size={15} /> : "Tomar este pedido"}
+          </button>
+        </div>
+      )}
+
+      {esAlmacenero && pedido.estado === "tomado" && !esPedidoTomadoPorMi && (
+        <div className="banner banner-warn"><ClipboardList size={16} /> Este pedido ya lo está preparando {pedido.almaceneroNombre}.</div>
       )}
 
       <div className="section-label"><ClipboardList size={13} /> Checklist</div>
@@ -95,8 +145,8 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
                 <div style={{ fontFamily: "var(--mono)", fontSize: 13 }}>{it.codigo}</div>
                 {it.piso && <div style={{ fontSize: 11, color: "var(--muted)" }}>Piso: {it.piso}</div>}
               </td>
-              <td style={{ width: esAlmacenero ? 190 : 0 }}>
-                {esAlmacenero && pedido.estado === "enviado" ? (
+              <td style={{ width: puedeMarcar ? 190 : 0 }}>
+                {puedeMarcar ? (
                   <div className="check-controls">
                     <button className={`chk-btn ${it.check === "ok" ? "active-ok" : ""}`}
                       onClick={() => updateItemCheck(it.id, { check: it.check === "ok" ? null : "ok" })}>
@@ -122,7 +172,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         </tbody>
       </table>
 
-      {esAlmacenero && pedido.estado === "enviado" && (
+      {puedeMarcar && (
         <div className="card" style={{ marginTop: 18 }}>
           <div className="field" style={{ marginBottom: 10 }}>
             <label><Boxes size={12} style={{ verticalAlign: -2 }} /> Cantidad de cajas del pedido</label>
