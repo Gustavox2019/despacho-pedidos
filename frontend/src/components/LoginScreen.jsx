@@ -1,13 +1,73 @@
-import { useState } from "react";
-import { Package, User, Warehouse } from "lucide-react";
-import { uid } from "../helpers.js";
+import { useEffect, useRef, useState } from "react";
+import { Package, User, Warehouse, Loader2, AlertTriangle } from "lucide-react";
+import { api } from "../api.js";
+
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 export default function LoginScreen({ onLogin }) {
-  const [nombre, setNombre] = useState("");
-  const [correo, setCorreo] = useState("");
-  const [rol, setRol] = useState(null);
+  const botonRef = useRef(null);
+  const [verificando, setVerificando] = useState(false);
+  const [error, setError] = useState("");
+  const [perfilPendiente, setPerfilPendiente] = useState(null); // cuenta nueva de Google, falta elegir rol
+  const [rolElegido, setRolElegido] = useState(null);
+  const [guardandoRol, setGuardandoRol] = useState(false);
 
-  const puedeEntrar = nombre.trim() && correo.trim() && rol;
+  useEffect(() => {
+    if (!CLIENT_ID) return;
+
+    let intentos = 0;
+    const intervalo = setInterval(() => {
+      intentos++;
+      if (window.google?.accounts?.id) {
+        clearInterval(intervalo);
+        window.google.accounts.id.initialize({
+          client_id: CLIENT_ID,
+          callback: manejarRespuestaGoogle
+        });
+        if (botonRef.current) {
+          window.google.accounts.id.renderButton(botonRef.current, {
+            theme: "outline", size: "large", width: 320, text: "continue_with"
+          });
+        }
+      } else if (intentos > 40) { // ~10 segundos
+        clearInterval(intervalo);
+        setError("No se pudo cargar el inicio de sesión de Google. Revisa tu conexión y recarga la página.");
+      }
+    }, 250);
+
+    return () => clearInterval(intervalo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function manejarRespuestaGoogle(response) {
+    setError("");
+    setVerificando(true);
+    try {
+      const perfil = await api.loginGoogle(response.credential);
+      if (perfil.rol) {
+        onLogin(perfil);
+      } else {
+        setPerfilPendiente(perfil); // necesita elegir vendedor/almacenero (primera vez)
+      }
+    } catch (err) {
+      setError(err.message || "No se pudo iniciar sesión con Google.");
+    } finally {
+      setVerificando(false);
+    }
+  }
+
+  async function confirmarRol() {
+    if (!rolElegido || !perfilPendiente) return;
+    setGuardandoRol(true);
+    try {
+      const usuario = await api.guardarRol({ id: perfilPendiente.id, nombre: perfilPendiente.nombre, correo: perfilPendiente.correo, rol: rolElegido });
+      onLogin(usuario);
+    } catch (err) {
+      setError(err.message || "No se pudo guardar tu rol.");
+    } finally {
+      setGuardandoRol(false);
+    }
+  }
 
   return (
     <div className="login-wrap">
@@ -20,36 +80,42 @@ export default function LoginScreen({ onLogin }) {
           <div className="brand-sub">Pedidos · Vendedores &amp; Almacén</div>
         </div>
 
-        <div className="field">
-          <label>Nombre</label>
-          <input type="text" placeholder="Como te conocen en el almacén" value={nombre}
-            onChange={e => setNombre(e.target.value)} />
-        </div>
-        <div className="field">
-          <label>Correo</label>
-          <input type="email" placeholder="tucorreo@gmail.com" value={correo}
-            onChange={e => setCorreo(e.target.value)} />
-        </div>
-        <div className="field">
-          <label>Eres</label>
-          <div className="role-pick">
-            <div className={`role-opt vendedor ${rol === "vendedor" ? "selected" : ""}`} onClick={() => setRol("vendedor")}>
-              <User size={22} />
-              <div className="role-opt-title">Vendedor</div>
+        {!CLIENT_ID && (
+          <div className="banner banner-warn"><AlertTriangle size={16} /> Falta configurar VITE_GOOGLE_CLIENT_ID.</div>
+        )}
+        {error && (
+          <div className="banner banner-warn"><AlertTriangle size={16} /> {error}</div>
+        )}
+
+        {perfilPendiente ? (
+          <>
+            <div className="helper-text" style={{ marginBottom: 12 }}>
+              Hola, {perfilPendiente.nombre.split(" ")[0]}. Primera vez que entras — ¿eres vendedor o almacenero?
             </div>
-            <div className={`role-opt almacenero ${rol === "almacenero" ? "selected" : ""}`} onClick={() => setRol("almacenero")}>
-              <Warehouse size={22} />
-              <div className="role-opt-title">Almacenero</div>
+            <div className="role-pick">
+              <div className={`role-opt vendedor ${rolElegido === "vendedor" ? "selected" : ""}`} onClick={() => setRolElegido("vendedor")}>
+                <User size={22} />
+                <div className="role-opt-title">Vendedor</div>
+              </div>
+              <div className={`role-opt almacenero ${rolElegido === "almacenero" ? "selected" : ""}`} onClick={() => setRolElegido("almacenero")}>
+                <Warehouse size={22} />
+                <div className="role-opt-title">Almacenero</div>
+              </div>
             </div>
-          </div>
-        </div>
-        <button className="btn btn-primary btn-block" disabled={!puedeEntrar}
-          onClick={() => onLogin({ nombre: nombre.trim(), correo: correo.trim(), rol, id: uid("u") })}>
-          Entrar
-        </button>
-        <div className="helper-text">
-          Login simple por ahora (sin contraseña).<br />Más adelante se puede conectar con cuenta de Google real.
-        </div>
+            <button className="btn btn-primary btn-block" style={{ marginTop: 16 }} disabled={!rolElegido || guardandoRol} onClick={confirmarRol}>
+              {guardandoRol ? <Loader2 className="spin" size={15} /> : "Entrar"}
+            </button>
+          </>
+        ) : verificando ? (
+          <div style={{ textAlign: "center", padding: 20 }}><Loader2 className="spin" size={22} /></div>
+        ) : (
+          <>
+            <div style={{ display: "flex", justifyContent: "center" }} ref={botonRef} />
+            <div className="helper-text">
+              Solo se usa para identificarte dentro de la app.<br />No se solicita ningún permiso adicional.
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

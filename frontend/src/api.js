@@ -19,5 +19,7 @@ export const api = {
   actualizarPedido: (id, patch) => request(`/pedidos/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   listarChat: (pedidoId) => request(`/chat/${pedidoId}`),
   enviarChat: (pedidoId, msg) => request(`/chat/${pedidoId}`, { method: "POST", body: JSON.stringify(msg) }),
-  transcribir: (imageBase64, mediaType) => request("/ocr", { method: "POST", body: JSON.stringify({ imageBase64, mediaType }) })
+  transcribir: (imageBase64, mediaType) => request("/ocr", { method: "POST", body: JSON.stringify({ imageBase64, mediaType }) }),
+  loginGoogle: (credential) => request("/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
+  guardarRol: (payload) => request("/auth/rol", { method: "POST", body: JSON.stringify(payload) })
 };

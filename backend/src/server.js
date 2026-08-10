@@ -4,6 +4,7 @@ import "dotenv/config";
 import pedidosRouter from "./routes/pedidos.js";
 import chatRouter from "./routes/chat.js";
 import ocrRouter from "./routes/ocr.js";
+import authRouter from "./routes/auth.js";
 
 const app = express();
 
@@ -30,6 +31,7 @@ app.get("/api/health", (req, res) => res.json({ ok: true }));
 app.use("/api/pedidos", pedidosRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/ocr", ocrRouter);
+app.use("/api/auth", authRouter);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
