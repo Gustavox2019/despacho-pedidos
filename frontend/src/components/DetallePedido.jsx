@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, CheckCheck, ClipboardList, CheckCircle2, XCircle,
-  Boxes, Download, MessageSquare, ChevronLeft, PackageCheck
+  Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus
 } from "lucide-react";
-import { fmtTime } from "../helpers.js";
+import { fmtTime, uid } from "../helpers.js";
 import { api } from "../api.js";
 import { descargarEtiquetas } from "../etiquetas.js";
 import ChatPanel from "./ChatPanel.jsx";
@@ -13,6 +13,9 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   const [cajasInput, setCajasInput] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [tomando, setTomando] = useState(false);
+  const [nuevaCantidad, setNuevaCantidad] = useState(1);
+  const [nuevoCodigo, setNuevoCodigo] = useState("");
+  const [agregando, setAgregando] = useState(false);
   const pedidoRef = useRef(null); // última versión conocida, para no pisar ediciones locales con el poll
 
   const cargar = useCallback(async () => {
@@ -56,6 +59,22 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     guardarEnSegundoPlano({ items: nuevosItems });
   }
 
+  async function agregarProducto() {
+    if (!nuevoCodigo.trim()) return;
+    setAgregando(true);
+    try {
+      const nuevoItem = { id: uid("it"), cantidad: Number(nuevaCantidad) || 1, codigo: nuevoCodigo.trim(), piso: "", check: null, texto: "" };
+      const nuevosItems = [...pedido.items, nuevoItem];
+      const actualizado = await api.actualizarPedido(pedidoId, { items: nuevosItems });
+      pedidoRef.current = actualizado;
+      setPedido(actualizado);
+      setNuevoCodigo("");
+      setNuevaCantidad(1);
+    } finally {
+      setAgregando(false);
+    }
+  }
+
   async function tomarPedido() {
     setTomando(true);
     try {
@@ -87,8 +106,10 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   }
 
   const esAlmacenero = user.rol === "almacenero";
+  const esVendedor = user.rol === "vendedor";
   const esPedidoTomadoPorMi = pedido.almaceneroId === user.id;
   const puedeMarcar = esAlmacenero && pedido.estado === "tomado" && esPedidoTomadoPorMi;
+  const vendedorPuedeAgregar = esVendedor && pedido.estado !== "finalizado";
   const todosMarcados = pedido.items.every(it => it.check === "ok" || it.check === "no");
   const cajasValidas = Number(cajasInput) > 0;
   const puedeFinalizar = puedeMarcar && todosMarcados && cajasValidas;
@@ -171,6 +192,24 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           ))}
         </tbody>
       </table>
+
+      {vendedorPuedeAgregar && (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 800, marginBottom: 10 }}>
+            Agregar producto a este pedido
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input type="number" min="1" className="qty-input" style={{ width: 56 }} value={nuevaCantidad}
+              onChange={e => setNuevaCantidad(e.target.value)} />
+            <input type="text" className="code-chip" placeholder="Código de producto" value={nuevoCodigo}
+              onChange={e => setNuevoCodigo(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && agregarProducto()} />
+            <button className="icon-btn" disabled={!nuevoCodigo.trim() || agregando} onClick={agregarProducto}>
+              {agregando ? <Loader2 className="spin" size={15} /> : <Plus size={15} />}
+            </button>
+          </div>
+        </div>
+      )}
 
       {puedeMarcar && (
         <div className="card" style={{ marginTop: 18 }}>
