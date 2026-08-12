@@ -1,7 +1,7 @@
 import { Router } from "express";
 import "dotenv/config";
 import { OAuth2Client } from "google-auth-library";
-import { db } from "../firebase.js";
+import { supabase } from "../supabase.js";
 
 const router = Router();
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -27,12 +27,15 @@ router.post("/google", async (req, res) => {
     const correo = payload.email;
     const nombre = payload.name || correo;
 
-    const ref = db.collection("usuarios").doc(id);
-    const doc = await ref.get();
+    const { data, error } = await supabase
+      .from("usuarios")
+      .select("rol")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
 
-    if (doc.exists) {
-      const datos = doc.data();
-      return res.json({ id, nombre, correo, rol: datos.rol });
+    if (data) {
+      return res.json({ id, nombre, correo, rol: data.rol });
     }
 
     // Cuenta nueva: todavía no sabemos si es vendedor o almacenero.
@@ -50,7 +53,10 @@ router.post("/rol", async (req, res) => {
     if (!id || !rol || !["vendedor", "almacenero"].includes(rol)) {
       return res.status(400).json({ error: "Datos inválidos." });
     }
-    await db.collection("usuarios").doc(id).set({ nombre, correo, rol }, { merge: true });
+    const { error } = await supabase
+      .from("usuarios")
+      .upsert({ id, nombre, correo, rol });
+    if (error) throw error;
     res.json({ id, nombre, correo, rol });
   } catch (err) {
     console.error(err);

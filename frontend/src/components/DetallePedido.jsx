@@ -4,7 +4,7 @@ import {
   Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus,
   Image as ImageIcon, MessageCircle, Layers, BadgeCheck
 } from "lucide-react";
-import { fmtTime, uid } from "../helpers.js";
+import { fmtTime, uid, calcularProgreso } from "../helpers.js";
 import { api } from "../api.js";
 import { descargarEtiquetas } from "../etiquetas.js";
 import ChatPanel from "./ChatPanel.jsx";
@@ -153,6 +153,26 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           {pedido.estado === "finalizado" && "Finalizado"}
         </span>
       </div>
+
+      {pedido.estado !== "pendiente" && (() => {
+        const pct = calcularProgreso(pedido);
+        const marcados = pedido.items.filter(it => it.check === "ok" || it.check === "no").length;
+        return (
+          <div style={{ marginBottom: 16 }}>
+            <div className="progreso-wrap" style={{ marginTop: 0 }}>
+              <div className="progreso-track">
+                <div className={`progreso-fill ${pct >= 100 ? "completo" : ""}`} style={{ width: `${pct}%` }} />
+              </div>
+              <div className="progreso-label">{pct}%</div>
+            </div>
+            {pedido.estado === "tomado" && pedido.modoAtencion !== "confirmar" && (
+              <div className="helper-text" style={{ marginTop: 4, textAlign: "left" }}>
+                {marcados} de {pedido.items.length} código(s) revisados
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {(pedido.fotoOriginal || pedido.tieneFoto) && (
         <div className="card" style={{ marginBottom: 14 }}>

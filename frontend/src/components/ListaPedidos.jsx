@@ -1,6 +1,18 @@
 import { useState, useMemo } from "react";
 import { ClipboardList, Loader2 } from "lucide-react";
-import { fmtTime } from "../helpers.js";
+import { fmtTime, calcularProgreso } from "../helpers.js";
+
+function BarraProgreso({ pedido }) {
+  const pct = calcularProgreso(pedido);
+  return (
+    <div className="progreso-wrap">
+      <div className="progreso-track">
+        <div className={`progreso-fill ${pct >= 100 ? "completo" : ""}`} style={{ width: `${pct}%` }} />
+      </div>
+      <div className="progreso-label">{pct}%</div>
+    </div>
+  );
+}
 
 function coincideDia(pedido, fecha) {
   if (!fecha) return true;
@@ -139,6 +151,7 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
                     </span>
                   )}
                 </div>
+                {p.estado !== "pendiente" && <BarraProgreso pedido={p} />}
               </div>
               <span className={`status-pill status-${p.estado}`}>
                 {p.estado === "pendiente" && "Pendiente"}

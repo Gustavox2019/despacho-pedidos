@@ -36,3 +36,20 @@ export async function resizeImageToBase64(file, maxDim) {
 }
 
 export function pad4(n) { return String(n).padStart(4, "0"); }
+
+// Calcula el % de avance de un pedido para mostrárselo al vendedor.
+// - pendiente: nadie lo tomó todavía → 0%
+// - finalizado: 100%
+// - tomado en modo "confirmar": no hay checklist línea por línea, así que
+//   se muestra un avance fijo de "en proceso" (50%) hasta que se finalice
+// - tomado en modo "separar": % de líneas ya marcadas (ok o no) sobre el total
+export function calcularProgreso(pedido) {
+  if (!pedido) return 0;
+  if (pedido.estado === "finalizado") return 100;
+  if (pedido.estado !== "tomado") return 0;
+  if (pedido.modoAtencion === "confirmar") return 50;
+  const total = pedido.items?.length || 0;
+  if (!total) return 0;
+  const marcados = pedido.items.filter(it => it.check === "ok" || it.check === "no").length;
+  return Math.round((marcados / total) * 100);
+}

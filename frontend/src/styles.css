@@ -125,6 +125,16 @@ body { background:#12151b; }
   .status-enviado, .status-pendiente{ color:var(--amber); border-color:var(--amber-dim); background:rgba(242,169,59,0.10); }
   .status-tomado{ color:var(--teal); border-color:var(--teal-dim); background:rgba(63,198,193,0.10); }
   .status-finalizado{ color:var(--green); border-color:var(--green-dim); background:rgba(62,207,126,0.10); }
+  .progreso-wrap{ display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .progreso-track{
+    flex:1; height:6px; border-radius:20px; background:var(--surface2);
+    border:1px solid var(--border); overflow:hidden;
+  }
+  .progreso-fill{
+    height:100%; border-radius:20px; background:var(--teal); transition:width .25s ease;
+  }
+  .progreso-fill.completo{ background:var(--green); }
+  .progreso-label{ font-size:11px; font-weight:800; color:var(--muted); min-width:32px; text-align:right; }
   .filter-bar{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
   .filter-bar input[type=date], .filter-bar input[type=text], .filter-bar select{
     background:var(--surface2); border:1px solid var(--border); color:var(--text);

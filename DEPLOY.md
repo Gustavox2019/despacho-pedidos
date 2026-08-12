@@ -5,7 +5,7 @@ terminal ni instalar Node, git, ni nada en tu computadora.
 
 Vas a usar 4 servicios gratuitos:
 - **GitHub** → donde vive el código (se sube arrastrando archivos, desde la web)
-- **Firebase** → la base de datos en la nube
+- **Supabase** → la base de datos en la nube
 - **Render** → donde corre el backend (el servidor)
 - **Vercel** → donde corre el frontend (la página web que ven tus vendedores/almacén)
 
@@ -24,14 +24,16 @@ Vas a usar 4 servicios gratuitos:
    esa página de GitHub.
 5. Dale **Commit changes**. Ya tienes el código en la nube.
 
-## 2. Firebase (base de datos en la nube)
+## 2. Supabase (base de datos en la nube)
 
-1. Ve a https://console.firebase.google.com → crea un proyecto (sin tarjeta).
-2. **Build → Firestore Database → Create database** → modo producción,
-   cualquier región.
-3. **⚙️ Configuración del proyecto → Cuentas de servicio** → **"Generar nueva
-   clave privada"**. Se descarga un `.json`. Ábrelo con el Bloc de notas y
-   copia **todo su contenido** (lo vas a necesitar en el paso 3).
+1. Ve a https://supabase.com → **Start your project** → crea un proyecto
+   (sin tarjeta), elige cualquier región cercana.
+2. **SQL Editor → New query**. Abre el archivo `backend/supabase-schema.sql`
+   del proyecto, copia todo su contenido, pégalo ahí, y dale **Run**. Esto
+   crea las tablas que la app necesita — se hace una sola vez.
+3. **⚙️ Project Settings → API**. Ahí copia (los vas a necesitar en el paso 3):
+   - **Project URL**
+   - **service_role key** (la clave secreta, NO la "anon public")
 
 ## 3. Backend en Render
 
@@ -45,8 +47,8 @@ Vas a usar 4 servicios gratuitos:
    - **Instance Type**: Free
 4. Baja a **Environment Variables** y agrega:
    - `GEMINI_API_KEY` → tu clave gratis de https://aistudio.google.com/apikey
-   - `FIREBASE_SERVICE_ACCOUNT_JSON` → pega aquí **todo el contenido** del
-     archivo `.json` que descargaste de Firebase en el paso 2
+   - `SUPABASE_URL` → el "Project URL" del paso 2
+   - `SUPABASE_SERVICE_ROLE_KEY` → la "service_role key" del paso 2
    - `FRONTEND_ORIGIN` → de momento pon `*` (lo ajustas en el paso 5)
 5. Click **Create Web Service**. Espera a que termine de compilar (unos
    minutos). Te da una URL pública, algo como:
