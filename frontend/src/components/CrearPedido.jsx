@@ -117,7 +117,9 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
   async function handleEnviar() {
     setEnviando(true);
     try {
-      await onCreado({ cliente: cliente.trim(), items });
+      // imgPreview ya es un data URL "data:image/jpeg;base64,..." — se
+      // guarda tal cual junto al pedido para poder revisarla después.
+      await onCreado({ cliente: cliente.trim(), items, fotoOriginal: imgPreview || null });
     } finally {
       setEnviando(false);
     }

@@ -21,7 +21,7 @@ async function generarSiguienteId() {
 // Crear un pedido nuevo (vendedor)
 router.post("/", async (req, res) => {
   try {
-    const { cliente, vendedorId, vendedorNombre, items } = req.body;
+    const { cliente, vendedorId, vendedorNombre, items, fotoOriginal } = req.body;
     if (!cliente || !vendedorId || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Faltan datos del pedido." });
     }
@@ -32,6 +32,7 @@ router.post("/", async (req, res) => {
       vendedorId,
       vendedorNombre,
       estado: "pendiente",
+      modoAtencion: null, // se define al "tomar" el pedido: "separar" | "confirmar"
       items: items.map((it, i) => ({
         id: it.id || `it-${i}`,
         cantidad: Number(it.cantidad) || 1,
@@ -40,6 +41,9 @@ router.post("/", async (req, res) => {
         check: null,
         texto: ""
       })),
+      // Guardamos la foto original de la lista (base64) tal como la subió el
+      // vendedor, para poder revisarla luego junto al pedido.
+      fotoOriginal: typeof fotoOriginal === "string" ? fotoOriginal : null,
       creadoEn: Date.now(),
       vistoPorVendedor: true
     };
@@ -60,7 +64,12 @@ router.get("/", async (req, res) => {
     let query = db.collection("pedidos");
     if (vendedorId) query = query.where("vendedorId", "==", vendedorId);
     const snap = await query.get();
-    const lista = snap.docs.map(d => d.data());
+    // La foto original solo se necesita en el detalle de un pedido — la
+    // quitamos de la lista para no cargar cada foto en cada refresco.
+    const lista = snap.docs.map(d => {
+      const { fotoOriginal, ...resto } = d.data();
+      return { ...resto, tieneFoto: !!fotoOriginal };
+    });
     lista.sort((a, b) => (b.creadoEn || 0) - (a.creadoEn || 0));
     res.json(lista);
   } catch (err) {

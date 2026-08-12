@@ -1,12 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, CheckCheck, ClipboardList, CheckCircle2, XCircle,
-  Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus
+  Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus,
+  Image as ImageIcon, MessageCircle, Layers, BadgeCheck
 } from "lucide-react";
 import { fmtTime, uid } from "../helpers.js";
 import { api } from "../api.js";
 import { descargarEtiquetas } from "../etiquetas.js";
 import ChatPanel from "./ChatPanel.jsx";
+
+// Número de WhatsApp de soporte al que se reporta un problema con un
+// pedido. Configúralo con VITE_WHATSAPP_SOPORTE en el .env del frontend
+// (formato internacional sin "+", ej. 51987654321).
+const WHATSAPP_SOPORTE = import.meta.env.VITE_WHATSAPP_SOPORTE || "";
 
 export default function DetallePedido({ pedidoId, user, onVolver }) {
   const [pedido, setPedido] = useState(null);
@@ -75,11 +81,11 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     }
   }
 
-  async function tomarPedido() {
+  async function tomarPedido(modoAtencion) {
     setTomando(true);
     try {
       const actualizado = await api.actualizarPedido(pedidoId, {
-        estado: "tomado", almaceneroId: user.id, almaceneroNombre: user.nombre, tomadoEn: Date.now()
+        estado: "tomado", almaceneroId: user.id, almaceneroNombre: user.nombre, tomadoEn: Date.now(), modoAtencion
       });
       pedidoRef.current = actualizado;
       setPedido(actualizado);
@@ -105,19 +111,40 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     return <div className="container"><div className="empty-state"><Loader2 className="spin" size={26} /></div></div>;
   }
 
-  const esAlmacenero = user.rol === "almacenero";
   const esVendedor = user.rol === "vendedor";
   const esPedidoTomadoPorMi = pedido.almaceneroId === user.id;
-  const puedeMarcar = esAlmacenero && pedido.estado === "tomado" && esPedidoTomadoPorMi;
+  const esModoConfirmar = pedido.modoAtencion === "confirmar";
+  // Cualquiera (vendedor o almacenero) puede tomar y preparar un pedido —
+  // ya no está restringido al rol almacenero.
+  const puedeMarcar = pedido.estado === "tomado" && esPedidoTomadoPorMi;
   const vendedorPuedeAgregar = esVendedor && pedido.estado !== "finalizado";
   const todosMarcados = pedido.items.every(it => it.check === "ok" || it.check === "no");
   const cajasValidas = Number(cajasInput) > 0;
-  const puedeFinalizar = puedeMarcar && todosMarcados && cajasValidas;
+  // En modo "confirmar" no se exige marcar cada línea, solo la cantidad de cajas.
+  const puedeFinalizar = puedeMarcar && cajasValidas && (esModoConfirmar || todosMarcados);
+
+  const mensajeWhatsapp = encodeURIComponent(`Tengo un problema con el pedido ${pedido.id}`);
+  const linkWhatsapp = WHATSAPP_SOPORTE ? `https://wa.me/${WHATSAPP_SOPORTE}?text=${mensajeWhatsapp}` : null;
 
   return (
     <div className="container">
-      <div className="pedido-id" style={{ fontSize: 13 }}>{pedido.id}</div>
-      <div className="page-title">{pedido.cliente}</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+        <div>
+          <div className="pedido-id" style={{ fontSize: 13 }}>{pedido.id}</div>
+          <div className="page-title">{pedido.cliente}</div>
+        </div>
+        <a
+          className="btn btn-outline btn-sm"
+          style={{ whiteSpace: "nowrap", color: "var(--green)", borderColor: "var(--green-dim)" }}
+          href={linkWhatsapp || undefined}
+          target="_blank" rel="noopener noreferrer"
+          title={linkWhatsapp ? "Reportar un problema con este pedido por WhatsApp" : "Falta configurar VITE_WHATSAPP_SOPORTE"}
+          onClick={e => { if (!linkWhatsapp) e.preventDefault(); }}
+          aria-disabled={!linkWhatsapp}
+        >
+          <MessageCircle size={13} /> WhatsApp
+        </a>
+      </div>
       <div className="page-sub">
         Vendedor: {pedido.vendedorNombre} · {fmtTime(pedido.creadoEn)}{" "}
         <span className={`status-pill status-${pedido.estado}`} style={{ marginLeft: 6 }}>
@@ -127,10 +154,24 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         </span>
       </div>
 
+      {(pedido.fotoOriginal || pedido.tieneFoto) && (
+        <div className="card" style={{ marginBottom: 14 }}>
+          <div className="section-label" style={{ marginTop: 0 }}><ImageIcon size={13} /> Foto original de la lista</div>
+          {pedido.fotoOriginal ? (
+            <img src={pedido.fotoOriginal} alt="Foto original del pedido" className="upload-preview" style={{ marginBottom: 0 }} />
+          ) : (
+            <div className="helper-text">Cargando foto…</div>
+          )}
+        </div>
+      )}
+
       {pedido.estado !== "pendiente" && pedido.almaceneroNombre && (
         <div className="banner banner-warn" style={{ background: "rgba(63,198,193,0.08)", borderColor: "var(--teal-dim)", color: "var(--teal)" }}>
           <PackageCheck size={16} />
-          <div>Tomado por {pedido.almaceneroNombre}{pedido.tomadoEn ? ` · ${fmtTime(pedido.tomadoEn)}` : ""}</div>
+          <div>
+            Tomado por {pedido.almaceneroNombre}{pedido.tomadoEn ? ` · ${fmtTime(pedido.tomadoEn)}` : ""}
+            {pedido.modoAtencion && <> · <strong>{pedido.modoAtencion === "separar" ? "Separando" : "Confirmando"}</strong></>}
+          </div>
         </div>
       )}
 
@@ -141,19 +182,27 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         </div>
       )}
 
-      {esAlmacenero && pedido.estado === "pendiente" && (
+      {pedido.estado === "pendiente" && (
         <div className="card" style={{ textAlign: "center" }}>
           <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
-            Nadie ha tomado este pedido todavía.
+            Nadie ha tomado este pedido todavía. ¿Cómo lo vas a atender?
           </div>
-          <button className="btn btn-primary btn-block" disabled={tomando} onClick={tomarPedido}>
-            {tomando ? <Loader2 className="spin" size={15} /> : "Tomar este pedido"}
-          </button>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="btn btn-primary" style={{ flex: 1 }} disabled={tomando} onClick={() => tomarPedido("separar")}>
+              {tomando ? <Loader2 className="spin" size={15} /> : (<><Layers size={14} /> Separar</>)}
+            </button>
+            <button className="btn btn-teal" style={{ flex: 1 }} disabled={tomando} onClick={() => tomarPedido("confirmar")}>
+              {tomando ? <Loader2 className="spin" size={15} /> : (<><BadgeCheck size={14} /> Confirmar</>)}
+            </button>
+          </div>
+          <div className="helper-text" style={{ marginTop: 10 }}>
+            "Separar" abre el checklist para armar cajas · "Confirmar" solo valida el pedido rápidamente.
+          </div>
         </div>
       )}
 
-      {esAlmacenero && pedido.estado === "tomado" && !esPedidoTomadoPorMi && (
-        <div className="banner banner-warn"><ClipboardList size={16} /> Este pedido ya lo está preparando {pedido.almaceneroNombre}.</div>
+      {pedido.estado === "tomado" && !esPedidoTomadoPorMi && (
+        <div className="banner banner-warn"><ClipboardList size={16} /> Este pedido ya lo está {pedido.modoAtencion === "confirmar" ? "confirmando" : "preparando"} {pedido.almaceneroNombre}.</div>
       )}
 
       <div className="section-label"><ClipboardList size={13} /> Checklist</div>
@@ -166,8 +215,8 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
                 <div style={{ fontFamily: "var(--mono)", fontSize: 13 }}>{it.codigo}</div>
                 {it.piso && <div style={{ fontSize: 11, color: "var(--muted)" }}>Piso: {it.piso}</div>}
               </td>
-              <td style={{ width: puedeMarcar ? 190 : 0 }}>
-                {puedeMarcar ? (
+              <td style={{ width: puedeMarcar && !esModoConfirmar ? 190 : 0 }}>
+                {puedeMarcar && !esModoConfirmar ? (
                   <div className="check-controls">
                     <button className={`chk-btn ${it.check === "ok" ? "active-ok" : ""}`}
                       onClick={() => updateItemCheck(it.id, { check: it.check === "ok" ? null : "ok" })}>
@@ -217,13 +266,13 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
             <label><Boxes size={12} style={{ verticalAlign: -2 }} /> Cantidad de cajas del pedido</label>
             <input type="number" min="1" value={cajasInput} onChange={e => setCajasInput(e.target.value)} />
           </div>
-          {!todosMarcados && (
+          {!esModoConfirmar && !todosMarcados && (
             <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 10 }}>
               Marca check o equis en todos los códigos para poder finalizar.
             </div>
           )}
           <button className="btn btn-primary btn-block" disabled={!puedeFinalizar || guardando} onClick={finalizar}>
-            {guardando ? <Loader2 className="spin" size={15} /> : "Finalizar pedido"}
+            {guardando ? <Loader2 className="spin" size={15} /> : (esModoConfirmar ? "Confirmar pedido" : "Finalizar pedido")}
           </button>
         </div>
       )}

@@ -10,7 +10,7 @@ function isoDia(ts) {
 }
 
 const ENCABEZADO = [
-  "Fecha", "ID Pedido", "Cliente", "Vendedor", "Almacenero", "Cajas",
+  "Fecha", "ID Pedido", "Cliente", "Vendedor", "Almacenero", "Modo", "Cajas",
   "Cantidad", "Codigo", "Piso", "Check", "Detalle"
 ];
 
@@ -47,6 +47,7 @@ function construirFilas(pedidos, filtro = {}) {
         p.cliente,
         p.vendedorNombre,
         p.almaceneroNombre || "",
+        p.modoAtencion === "separar" ? "Separar" : p.modoAtencion === "confirmar" ? "Confirmar" : "",
         p.cajas || "",
         it.cantidad,
         it.codigo,
@@ -90,7 +91,7 @@ export function exportarReporteXLSX(pedidos, filtro) {
   const filas = construirFilas(pedidos, filtro);
   const hoja = XLSX.utils.aoa_to_sheet(filas);
   hoja["!cols"] = [
-    { wch: 11 }, { wch: 11 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 7 },
+    { wch: 11 }, { wch: 11 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 10 }, { wch: 7 },
     { wch: 9 }, { wch: 16 }, { wch: 10 }, { wch: 7 }, { wch: 24 }
   ];
   const libro = XLSX.utils.book_new();

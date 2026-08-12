@@ -75,14 +75,37 @@ PC en la red local, por ejemplo `http://192.168.1.20:5173`, y ajusta
 
 1. Cada persona entra, pone su nombre/correo y elige si es **Vendedor** o
    **Almacenero** (login simple por ahora, sin contraseña).
-2. El vendedor crea un pedido: nombre del cliente + foto de la lista (a mano
-   o captura de Excel). La IA la transcribe y contrasta cada código contra tu
-   catálogo (`backend/src/codigos.json`, ~20,000 códigos).
-3. El almacenero revisa el pedido, marca check/equis por código, pone la
-   cantidad de cajas y finaliza. Esto notifica al vendedor.
-4. Cualquiera puede descargar las etiquetas de las cajas (una imagen por
+2. El vendedor crea un pedido: nombre del cliente + la lista, que puede
+   subir como foto (a mano o captura de Excel, la IA la transcribe), o como
+   archivo Excel/CSV real (se leen los códigos directamente, sin IA). La
+   foto original que se sube queda guardada junto al pedido, visible en su
+   detalle.
+3. **Cualquiera** (vendedor o almacenero) puede tomar un pedido pendiente, y
+   elige cómo atenderlo: **Separar** (abre el checklist completo para marcar
+   cada código y armar cajas) o **Confirmar** (validación rápida, sin marcar
+   línea por línea). Al finalizar, pone la cantidad de cajas. Esto notifica
+   al vendedor.
+4. Todos ven el listado completo de pedidos enviados (pestañas Pendientes /
+   Tomados por mí / Todos), con filtros por cliente, fecha, vendedor o quien
+   lo tomó.
+5. La sección **Estadísticas** (botón arriba del listado) muestra, en
+   porcentaje, quién ha separado más listas que los demás.
+6. Cualquiera puede descargar las etiquetas de las cajas (una imagen por
    caja) desde el detalle del pedido ya finalizado.
-5. Cada pedido tiene su propio chat, guardado, para dudas de stock.
+7. Cada pedido tiene su propio chat, guardado, para dudas de stock — y un
+   botón de **WhatsApp** en el detalle para reportar un problema puntual con
+   ese pedido a un número de soporte (configúralo con
+   `VITE_WHATSAPP_SOPORTE` en el `.env` del frontend, ver
+   `frontend/.env.example`).
+
+## Nota técnica: foto original guardada en Firestore
+
+La foto original se guarda directamente dentro del documento del pedido en
+Firestore (no se usa Firebase Storage). Firestore permite hasta ~1&nbsp;MB
+por documento; la app ya redimensiona la foto a 1600px antes de subirla, así
+que normalmente entra sin problema. Si en el futuro subes fotos muy
+detalladas y ves errores al crear el pedido, avísame y lo cambiamos a
+Firebase Storage (guardando solo la URL en el documento).
 
 ## Pendiente conocido: columna "Piso"
 

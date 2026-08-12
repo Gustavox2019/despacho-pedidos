@@ -80,37 +80,33 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
   const [tab, setTab] = useState("pendientes"); // pendientes | mis-tomados | todos
 
-  // Pendientes: sin filtro de fecha. Tomados por mí / Todos: rango de fecha.
-  // Vendedor: un solo día.
-  const modoFecha = esVendedor ? "dia" : (tab === "pendientes" ? "ninguno" : "rango");
+  // Ambos roles ven las mismas pestañas y filtros ahora, porque cualquiera
+  // puede tomar y preparar pedidos, no solo el almacén.
+  const modoFecha = tab === "pendientes" ? "ninguno" : "rango";
 
   const filtrados = useMemo(() => {
     let lista = [...pedidos];
-    if (!esVendedor) {
-      if (tab === "pendientes") lista = lista.filter(p => p.estado === "pendiente");
-      else if (tab === "mis-tomados") lista = lista.filter(p => p.almaceneroId === user.id && p.estado !== "pendiente");
-    }
+    if (tab === "pendientes") lista = lista.filter(p => p.estado === "pendiente");
+    else if (tab === "mis-tomados") lista = lista.filter(p => p.almaceneroId === user.id && p.estado !== "pendiente");
     lista = aplicarFiltros(lista, filtros, modoFecha);
     return lista.sort((a, b) => b.creadoEn - a.creadoEn);
-  }, [pedidos, esVendedor, filtros, tab, user.id, modoFecha]);
+  }, [pedidos, filtros, tab, user.id, modoFecha]);
 
   return (
     <div>
-      {!esVendedor && (
-        <div className="tabs">
-          <button className={`tab-btn ${tab === "pendientes" ? "active" : ""}`} onClick={() => setTab("pendientes")}>Pendientes</button>
-          <button className={`tab-btn ${tab === "mis-tomados" ? "active" : ""}`} onClick={() => setTab("mis-tomados")}>Tomados por mí</button>
-          <button className={`tab-btn ${tab === "todos" ? "active" : ""}`} onClick={() => setTab("todos")}>Todos</button>
-        </div>
-      )}
+      <div className="tabs">
+        <button className={`tab-btn ${tab === "pendientes" ? "active" : ""}`} onClick={() => setTab("pendientes")}>Pendientes</button>
+        <button className={`tab-btn ${tab === "mis-tomados" ? "active" : ""}`} onClick={() => setTab("mis-tomados")}>Tomados por mí</button>
+        <button className={`tab-btn ${tab === "todos" ? "active" : ""}`} onClick={() => setTab("todos")}>Todos</button>
+      </div>
 
       <FiltrosPedidos
         pedidos={pedidos}
         filtros={filtros}
         setFiltros={setFiltros}
         modo={modoFecha}
-        mostrarFiltroVendedor={!esVendedor}
-        mostrarFiltroAlmacenero={esVendedor}
+        mostrarFiltroVendedor={true}
+        mostrarFiltroAlmacenero={true}
       />
 
       {loading ? (
@@ -137,6 +133,11 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
                 <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                   <span className="name-chip vendedor">V: {p.vendedorNombre}</span>
                   {p.almaceneroNombre && <span className="name-chip almacenero">A: {p.almaceneroNombre}</span>}
+                  {p.modoAtencion && (
+                    <span className={`name-chip ${p.modoAtencion === "separar" ? "almacenero" : "vendedor"}`}>
+                      {p.modoAtencion === "separar" ? "Separar" : "Confirmar"}
+                    </span>
+                  )}
                 </div>
               </div>
               <span className={`status-pill status-${p.estado}`}>

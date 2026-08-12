@@ -66,6 +66,10 @@ Vas a usar 4 servicios gratuitos:
 4. Antes de darle "Deploy", abre **Environment Variables** y agrega:
    - `VITE_API_BASE_URL` → la URL de Render del paso 3, ej.
      `https://despacho-backend.onrender.com` (sin barra al final)
+   - `VITE_GOOGLE_CLIENT_ID` → el Client ID de Google (ver `GOOGLE_LOGIN.md`)
+   - `VITE_WHATSAPP_SOPORTE` → el número de WhatsApp al que debe ir el botón
+     "Reportar un problema" de cada pedido, en formato internacional y sin
+     "+" (ej. `51987654321`)
 5. Click **Deploy**. En un par de minutos te da tu URL pública, ej.
    `https://despacho-pedidos.vercel.app` — **esa es la que compartes con tus
    vendedores y almaceneros**.

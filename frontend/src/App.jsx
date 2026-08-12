@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Plus, FileSpreadsheet, FileText } from "lucide-react";
+import { Loader2, Plus, FileSpreadsheet, FileText, BarChart3 } from "lucide-react";
 import "./styles.css";
 import { api } from "./api.js";
 import { exportarReporteCSV, exportarReporteXLSX } from "./reporte.js";
@@ -8,6 +8,7 @@ import TopBar from "./components/TopBar.jsx";
 import ListaPedidos from "./components/ListaPedidos.jsx";
 import CrearPedido from "./components/CrearPedido.jsx";
 import DetallePedido from "./components/DetallePedido.jsx";
+import EstadisticasPanel from "./components/EstadisticasPanel.jsx";
 
 function MenuExportar({ pedidos }) {
   const [abierto, setAbierto] = useState(false);
@@ -82,7 +83,7 @@ const SESION_KEY = "despacho-sesion";
 export default function App() {
   const [user, setUser] = useState(null);
   const [cargandoSesion, setCargandoSesion] = useState(true);
-  const [vista, setVista] = useState("home"); // home | crear | detalle
+  const [vista, setVista] = useState("home"); // home | crear | detalle | estadisticas
   const [pedidoActivoId, setPedidoActivoId] = useState(null);
   const [pedidos, setPedidos] = useState([]);
   const [cargandoPedidos, setCargandoPedidos] = useState(true);
@@ -95,14 +96,15 @@ export default function App() {
     setCargandoSesion(false);
   }, []);
 
+  // Tanto vendedores como almaceneros ven todas las listas enviadas —
+  // ya no se filtra por vendedorId — para que cualquiera pueda tomarlas.
   const cargarPedidos = useCallback(async () => {
     try {
-      const vendedorId = user?.rol === "vendedor" ? user.id : undefined;
-      const lista = await api.listarPedidos(vendedorId);
+      const lista = await api.listarPedidos();
       setPedidos(lista);
     } catch (e) { /* se reintenta en el próximo poll */ }
     setCargandoPedidos(false);
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     if (!user || vista !== "home") return;
@@ -123,14 +125,15 @@ export default function App() {
 
   const [errorCrear, setErrorCrear] = useState("");
 
-  async function crearPedido({ cliente, items }) {
+  async function crearPedido({ cliente, items, fotoOriginal }) {
     setErrorCrear("");
     try {
       const nuevoPedido = await api.crearPedido({
         cliente,
         vendedorId: user.id,
         vendedorNombre: user.nombre,
-        items
+        items,
+        fotoOriginal
       });
       setPedidoActivoId(nuevoPedido.id);
       setVista("detalle");
@@ -163,10 +166,15 @@ export default function App() {
             <div>
               <div className="page-title">{user.rol === "vendedor" ? `Hola, ${user.nombre.split(" ")[0]}` : "Pedidos por despachar"}</div>
               <div className="page-sub">
-                {user.rol === "vendedor" ? "Tus pedidos enviados al almacén." : "Toma, marca y finaliza los pedidos de los vendedores."}
+                Todas las listas enviadas por los vendedores — cualquiera puede tomarlas, separarlas o confirmarlas.
               </div>
             </div>
-            {user.rol === "almacenero" && <MenuExportar pedidos={pedidos} />}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }} onClick={() => setVista("estadisticas")}>
+                <BarChart3 size={13} /> Estadísticas
+              </button>
+              <MenuExportar pedidos={pedidos} />
+            </div>
           </div>
           <ListaPedidos pedidos={pedidos} user={user} onOpen={abrirPedido} loading={cargandoPedidos} />
         </div>
@@ -178,6 +186,10 @@ export default function App() {
 
       {vista === "detalle" && pedidoActivoId && (
         <DetallePedido pedidoId={pedidoActivoId} user={user} onVolver={() => { setVista("home"); cargarPedidos(); }} />
+      )}
+
+      {vista === "estadisticas" && (
+        <EstadisticasPanel pedidos={pedidos} onVolver={() => setVista("home")} />
       )}
 
       {vista === "home" && user.rol === "vendedor" && (
