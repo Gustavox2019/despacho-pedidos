@@ -87,7 +87,7 @@ router.post("/", async (req, res) => {
 
     const { data, error } = await supabase
       .from("pedidos")
-      .insert(aColumnas(pedido))
+      .insert({ id, ...aColumnas(pedido) })
       .select()
       .single();
     if (error) throw error;
