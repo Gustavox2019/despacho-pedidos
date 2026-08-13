@@ -125,7 +125,7 @@ export default function App() {
 
   const [errorCrear, setErrorCrear] = useState("");
 
-  async function crearPedido({ cliente, items, fotoOriginal }) {
+  async function crearPedido({ cliente, items, fotoOriginal, modoAtencion }) {
     setErrorCrear("");
     try {
       const nuevoPedido = await api.crearPedido({
@@ -133,7 +133,8 @@ export default function App() {
         vendedorId: user.id,
         vendedorNombre: user.nombre,
         items,
-        fotoOriginal
+        fotoOriginal,
+        modoAtencion
       });
       setPedidoActivoId(nuevoPedido.id);
       setVista("detalle");

@@ -58,9 +58,12 @@ async function generarSiguienteId() {
 // Crear un pedido nuevo (vendedor)
 router.post("/", async (req, res) => {
   try {
-    const { cliente, vendedorId, vendedorNombre, items, fotoOriginal } = req.body;
+    const { cliente, vendedorId, vendedorNombre, items, fotoOriginal, modoAtencion } = req.body;
     if (!cliente || !vendedorId || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Faltan datos del pedido." });
+    }
+    if (!["separar", "confirmar"].includes(modoAtencion)) {
+      return res.status(400).json({ error: "Falta indicar si el pedido es para separar o confirmar." });
     }
     const id = await generarSiguienteId();
     const pedido = {
@@ -69,7 +72,7 @@ router.post("/", async (req, res) => {
       vendedorId,
       vendedorNombre,
       estado: "pendiente",
-      modoAtencion: null, // se define al "tomar" el pedido: "separar" | "confirmar"
+      modoAtencion, // ahora lo define el vendedor al crear el pedido, no el almacenero al tomarlo
       items: items.map((it, i) => ({
         id: it.id || `it-${i}`,
         cantidad: Number(it.cantidad) || 1,

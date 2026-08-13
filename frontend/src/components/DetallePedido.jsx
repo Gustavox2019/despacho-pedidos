@@ -81,11 +81,11 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     }
   }
 
-  async function tomarPedido(modoAtencion) {
+  async function tomarPedido() {
     setTomando(true);
     try {
       const actualizado = await api.actualizarPedido(pedidoId, {
-        estado: "tomado", almaceneroId: user.id, almaceneroNombre: user.nombre, tomadoEn: Date.now(), modoAtencion
+        estado: "tomado", almaceneroId: user.id, almaceneroNombre: user.nombre, tomadoEn: Date.now()
       });
       pedidoRef.current = actualizado;
       setPedido(actualizado);
@@ -178,7 +178,9 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         <div className="card" style={{ marginBottom: 14 }}>
           <div className="section-label" style={{ marginTop: 0 }}><ImageIcon size={13} /> Foto original de la lista</div>
           {pedido.fotoOriginal ? (
-            <img src={pedido.fotoOriginal} alt="Foto original del pedido" className="upload-preview" style={{ marginBottom: 0 }} />
+            <a href={pedido.fotoOriginal} target="_blank" rel="noopener noreferrer" title="Ver en tamaño completo">
+              <img src={pedido.fotoOriginal} alt="Foto original del pedido" className="upload-preview" style={{ marginBottom: 0, cursor: "zoom-in" }} />
+            </a>
           ) : (
             <div className="helper-text">Cargando foto…</div>
           )}
@@ -205,19 +207,20 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
       {pedido.estado === "pendiente" && (
         <div className="card" style={{ textAlign: "center" }}>
           <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
-            Nadie ha tomado este pedido todavía. ¿Cómo lo vas a atender?
+            El vendedor indicó que este pedido es para{" "}
+            <strong style={{ color: pedido.modoAtencion === "confirmar" ? "var(--teal)" : "var(--fg)" }}>
+              {pedido.modoAtencion === "confirmar" ? "Confirmar" : "Separar"}
+            </strong>. Nadie lo ha tomado todavía.
           </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button className="btn btn-primary" style={{ flex: 1 }} disabled={tomando} onClick={() => tomarPedido("separar")}>
-              {tomando ? <Loader2 className="spin" size={15} /> : (<><Layers size={14} /> Separar</>)}
-            </button>
-            <button className="btn btn-teal" style={{ flex: 1 }} disabled={tomando} onClick={() => tomarPedido("confirmar")}>
-              {tomando ? <Loader2 className="spin" size={15} /> : (<><BadgeCheck size={14} /> Confirmar</>)}
-            </button>
-          </div>
-          <div className="helper-text" style={{ marginTop: 10 }}>
-            "Separar" abre el checklist para armar cajas · "Confirmar" solo valida el pedido rápidamente.
-          </div>
+          <button
+            className={`btn ${pedido.modoAtencion === "confirmar" ? "btn-teal" : "btn-primary"} btn-block`}
+            disabled={tomando}
+            onClick={tomarPedido}
+          >
+            {tomando ? <Loader2 className="spin" size={15} /> : (
+              <>{pedido.modoAtencion === "confirmar" ? <BadgeCheck size={14} /> : <Layers size={14} />} Tomar pedido</>
+            )}
+          </button>
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
-import { Camera, Upload, Loader2, AlertTriangle, ClipboardList, Plus, Trash2, Layers, FileSpreadsheet, Clipboard } from "lucide-react";
+import { Camera, Upload, Loader2, AlertTriangle, ClipboardList, Plus, Trash2, Layers, FileSpreadsheet, Clipboard, BadgeCheck } from "lucide-react";
 import { resizeImageToBase64, uid } from "../helpers.js";
 import { parsearExcel } from "../excelParser.js";
 import { api } from "../api.js";
@@ -11,6 +11,7 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
   const [errorOcr, setErrorOcr] = useState("");
   const [items, setItems] = useState([]);
   const [enviando, setEnviando] = useState(false);
+  const [modoAtencion, setModoAtencion] = useState(null); // "separar" | "confirmar"
   const fileRefCamara = useRef(null);
   const fileRefGaleria = useRef(null);
   const fileRefExcel = useRef(null);
@@ -119,13 +120,13 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
     try {
       // imgPreview ya es un data URL "data:image/jpeg;base64,..." — se
       // guarda tal cual junto al pedido para poder revisarla después.
-      await onCreado({ cliente: cliente.trim(), items, fotoOriginal: imgPreview || null });
+      await onCreado({ cliente: cliente.trim(), items, fotoOriginal: imgPreview || null, modoAtencion });
     } finally {
       setEnviando(false);
     }
   }
 
-  const puedeEnviar = cliente.trim() && items.length > 0 && items.every(it => it.codigo.trim()) && !enviando;
+  const puedeEnviar = cliente.trim() && items.length > 0 && items.every(it => it.codigo.trim()) && !!modoAtencion && !enviando;
 
   return (
     <div className="container">
@@ -233,6 +234,31 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
       <button className="btn btn-outline btn-sm" style={{ marginTop: 12 }} onClick={addManualRow}>
         <Plus size={13} /> Agregar línea manual
       </button>
+
+      <div className="field" style={{ marginTop: 22 }}>
+        <label>¿Cómo debe atenderse este pedido? *</label>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            type="button"
+            className={`btn ${modoAtencion === "separar" ? "btn-primary" : "btn-outline"}`}
+            style={{ flex: 1 }}
+            onClick={() => setModoAtencion("separar")}
+          >
+            <Layers size={14} /> Separar
+          </button>
+          <button
+            type="button"
+            className={`btn ${modoAtencion === "confirmar" ? "btn-teal" : "btn-outline"}`}
+            style={{ flex: 1 }}
+            onClick={() => setModoAtencion("confirmar")}
+          >
+            <BadgeCheck size={14} /> Confirmar
+          </button>
+        </div>
+        <div className="helper-text" style={{ marginTop: 8 }}>
+          "Separar" abre el checklist para armar cajas en almacén · "Confirmar" solo valida el pedido rápidamente.
+        </div>
+      </div>
 
       {errorEnvio && (
         <div className="banner banner-warn"><AlertTriangle size={16} /> {errorEnvio}</div>
