@@ -22,6 +22,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   const [nuevaCantidad, setNuevaCantidad] = useState(1);
   const [nuevoCodigo, setNuevoCodigo] = useState("");
   const [agregando, setAgregando] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
   const pedidoRef = useRef(null); // última versión conocida, para no pisar ediciones locales con el poll
 
   const cargar = useCallback(async () => {
@@ -94,6 +95,20 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     }
   }
 
+  async function cancelarPedido() {
+    if (!window.confirm("¿Seguro que quieres cancelar este pedido? Esta acción no se puede deshacer.")) return;
+    setCancelando(true);
+    try {
+      const actualizado = await api.actualizarPedido(pedidoId, { estado: "cancelado" });
+      pedidoRef.current = actualizado;
+      setPedido(actualizado);
+    } catch (err) {
+      console.error("No se pudo cancelar el pedido:", err);
+    } finally {
+      setCancelando(false);
+    }
+  }
+
   async function finalizar() {
     setGuardando(true);
     try {
@@ -118,6 +133,10 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   // ya no está restringido al rol almacenero.
   const puedeMarcar = pedido.estado === "tomado" && esPedidoTomadoPorMi;
   const vendedorPuedeAgregar = esVendedor && pedido.estado !== "finalizado";
+  // Solo el vendedor que creó el pedido puede cancelarlo, y solo mientras
+  // no esté finalizado ni ya cancelado.
+  const puedeCancelar = esVendedor && pedido.vendedorId === user.id
+    && pedido.estado !== "finalizado" && pedido.estado !== "cancelado";
   const todosMarcados = pedido.items.every(it => it.check === "ok" || it.check === "no");
   const cajasValidas = Number(cajasInput) > 0;
   // En modo "confirmar" no se exige marcar cada línea, solo la cantidad de cajas.
@@ -151,6 +170,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           {pedido.estado === "pendiente" && "Pendiente"}
           {pedido.estado === "tomado" && "En proceso"}
           {pedido.estado === "finalizado" && "Finalizado"}
+          {pedido.estado === "cancelado" && "Cancelado"}
         </span>
       </div>
 
@@ -201,6 +221,13 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         <div className="banner banner-success">
           <CheckCheck size={16} />
           <div>Pedido finalizado por {pedido.almaceneroNombre || "almacén"} · {pedido.cajas} caja(s) preparadas.</div>
+        </div>
+      )}
+
+      {pedido.estado === "cancelado" && (
+        <div className="banner banner-warn" style={{ background: "rgba(239,91,91,0.08)", borderColor: "var(--red-dim)", color: "var(--red)" }}>
+          <XCircle size={16} />
+          <div>Este pedido fue cancelado por el vendedor.</div>
         </div>
       )}
 
@@ -314,8 +341,18 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
       <div className="section-label"><MessageSquare size={13} /> Chat del pedido</div>
       <ChatPanel pedidoId={pedido.id} user={user} />
 
-      <div style={{ marginTop: 22 }}>
+      <div style={{ marginTop: 22, display: "flex", gap: 10, flexWrap: "wrap" }}>
         <button className="btn btn-outline" onClick={onVolver}><ChevronLeft size={14} /> Volver</button>
+        {puedeCancelar && (
+          <button
+            className="btn btn-outline"
+            style={{ color: "var(--red)", borderColor: "var(--red-dim)" }}
+            disabled={cancelando}
+            onClick={cancelarPedido}
+          >
+            {cancelando ? <Loader2 className="spin" size={15} /> : <XCircle size={14} />} Cancelar pedido
+          </button>
+        )}
       </div>
     </div>
   );

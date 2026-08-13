@@ -125,6 +125,7 @@ body { background:#12151b; }
   .status-enviado, .status-pendiente{ color:var(--amber); border-color:var(--amber-dim); background:rgba(242,169,59,0.10); }
   .status-tomado{ color:var(--teal); border-color:var(--teal-dim); background:rgba(63,198,193,0.10); }
   .status-finalizado{ color:var(--green); border-color:var(--green-dim); background:rgba(62,207,126,0.10); }
+  .status-cancelado{ color:var(--red); border-color:var(--red-dim); background:rgba(239,91,91,0.10); }
   .progreso-wrap{ display:flex; align-items:center; gap:8px; margin-top:8px; }
   .progreso-track{
     flex:1; height:6px; border-radius:20px; background:var(--surface2);
@@ -179,7 +180,7 @@ body { background:#12151b; }
   .item-row td{ padding:9px 4px; vertical-align:middle; }
   .code-chip{
     font-family:var(--mono); font-size:12.5px; background:var(--surface2); border:1px solid var(--border);
-    border-radius:6px; padding:6px 8px; width:100%;
+    border-radius:6px; padding:6px 8px; width:100%; color:var(--text);
   }
   .match-badge{ font-size:9.5px; text-transform:uppercase; font-weight:800; letter-spacing:0.04em; }
   .match-exacto{ color:var(--green); }

@@ -157,6 +157,7 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
                 {p.estado === "pendiente" && "Pendiente"}
                 {p.estado === "tomado" && "En proceso"}
                 {p.estado === "finalizado" && "Finalizado"}
+                {p.estado === "cancelado" && "Cancelado"}
               </span>
             </div>
           );

@@ -21,7 +21,7 @@ create table if not exists pedidos (
   vendedor_id         text not null,
   vendedor_nombre     text,
   estado              text not null default 'pendiente'
-                        check (estado in ('pendiente', 'tomado', 'finalizado')),
+                        check (estado in ('pendiente', 'tomado', 'finalizado', 'cancelado')),
   modo_atencion       text check (modo_atencion in ('separar', 'confirmar')),
   items               jsonb not null default '[]'::jsonb,
   foto_original       text,                        -- foto en base64 (puede ser grande)
