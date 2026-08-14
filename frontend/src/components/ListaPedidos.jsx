@@ -1,24 +1,6 @@
 import { useState, useMemo } from "react";
 import { ClipboardList, Loader2 } from "lucide-react";
-import { fmtTime, calcularProgreso } from "../helpers.js";
-
-function BarraProgreso({ pedido }) {
-  const pct = calcularProgreso(pedido);
-  return (
-    <div className="progreso-wrap">
-      <div className="progreso-track">
-        <div className={`progreso-fill ${pct >= 100 ? "completo" : ""}`} style={{ width: `${pct}%` }} />
-      </div>
-      <div className="progreso-label">{pct}%</div>
-    </div>
-  );
-}
-
-function coincideDia(pedido, fecha) {
-  if (!fecha) return true;
-  const iso = new Date(pedido.creadoEn).toISOString().slice(0, 10);
-  return iso === fecha;
-}
+import { fmtTime } from "../helpers.js";
 
 function coincideRango(pedido, desde, hasta) {
   const iso = new Date(pedido.creadoEn).toISOString().slice(0, 10);
@@ -33,18 +15,15 @@ function valoresUnicos(pedidos, campo) {
   return [...set].sort();
 }
 
-const FILTROS_VACIOS = { fecha: "", fechaDesde: "", fechaHasta: "", cliente: "", idPedido: "", vendedor: "", almacenero: "" };
+const FILTROS_VACIOS = { fechaDesde: "", fechaHasta: "", cliente: "", idPedido: "", vendedor: "", almacenero: "" };
 
-function FiltrosPedidos({ pedidos, filtros, setFiltros, modo, mostrarFiltroVendedor, mostrarFiltroAlmacenero }) {
+function FiltrosPedidos({ pedidos, filtros, setFiltros, mostrarFecha, mostrarFiltroVendedor, mostrarFiltroAlmacenero }) {
   const vendedores = useMemo(() => valoresUnicos(pedidos, "vendedorNombre"), [pedidos]);
   const almaceneros = useMemo(() => valoresUnicos(pedidos, "almaceneroNombre"), [pedidos]);
 
   return (
     <div className="filter-bar">
-      {modo === "dia" && (
-        <input type="date" value={filtros.fecha} onChange={e => setFiltros(f => ({ ...f, fecha: e.target.value }))} />
-      )}
-      {modo === "rango" && (
+      {mostrarFecha && (
         <>
           <input type="date" title="Desde" value={filtros.fechaDesde} onChange={e => setFiltros(f => ({ ...f, fechaDesde: e.target.value }))} />
           <input type="date" title="Hasta" value={filtros.fechaHasta} onChange={e => setFiltros(f => ({ ...f, fechaHasta: e.target.value }))} />
@@ -70,10 +49,9 @@ function FiltrosPedidos({ pedidos, filtros, setFiltros, modo, mostrarFiltroVende
   );
 }
 
-function aplicarFiltros(lista, filtros, modoFecha) {
+function aplicarFiltros(lista, filtros, mostrarFecha) {
   let out = lista;
-  if (modoFecha === "dia") out = out.filter(p => coincideDia(p, filtros.fecha));
-  else if (modoFecha === "rango") out = out.filter(p => coincideRango(p, filtros.fechaDesde, filtros.fechaHasta));
+  if (mostrarFecha) out = out.filter(p => coincideRango(p, filtros.fechaDesde, filtros.fechaHasta));
   if (filtros.cliente.trim()) {
     const q = filtros.cliente.trim().toLowerCase();
     out = out.filter(p => p.cliente.toLowerCase().includes(q));
@@ -88,25 +66,27 @@ function aplicarFiltros(lista, filtros, modoFecha) {
 }
 
 export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
-  const esVendedor = user.rol === "vendedor";
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
-  const [tab, setTab] = useState("pendientes"); // pendientes | mis-tomados | todos
+  const [tab, setTab] = useState(user.rol === "vendedor" ? "mis-pedidos" : "pendientes");
 
-  // Ambos roles ven las mismas pestañas y filtros ahora, porque cualquiera
-  // puede tomar y preparar pedidos, no solo el almacén.
-  const modoFecha = tab === "pendientes" ? "ninguno" : "rango";
+  const mostrarFecha = tab !== "pendientes";
+  const mostrarFiltroAlmacenero = tab === "todos";
 
   const filtrados = useMemo(() => {
     let lista = [...pedidos];
-    if (tab === "pendientes") lista = lista.filter(p => p.estado === "pendiente");
+    if (tab === "mis-pedidos") lista = lista.filter(p => p.vendedorId === user.id);
+    else if (tab === "pendientes") lista = lista.filter(p => p.estado === "pendiente");
     else if (tab === "mis-tomados") lista = lista.filter(p => p.almaceneroId === user.id && p.estado !== "pendiente");
-    lista = aplicarFiltros(lista, filtros, modoFecha);
+    // "todos": sin filtro adicional
+
+    lista = aplicarFiltros(lista, filtros, mostrarFecha);
     return lista.sort((a, b) => b.creadoEn - a.creadoEn);
-  }, [pedidos, filtros, tab, user.id, modoFecha]);
+  }, [pedidos, filtros, tab, user.id, mostrarFecha]);
 
   return (
     <div>
       <div className="tabs">
+        <button className={`tab-btn ${tab === "mis-pedidos" ? "active" : ""}`} onClick={() => setTab("mis-pedidos")}>Mis pedidos</button>
         <button className={`tab-btn ${tab === "pendientes" ? "active" : ""}`} onClick={() => setTab("pendientes")}>Pendientes</button>
         <button className={`tab-btn ${tab === "mis-tomados" ? "active" : ""}`} onClick={() => setTab("mis-tomados")}>Tomados por mí</button>
         <button className={`tab-btn ${tab === "todos" ? "active" : ""}`} onClick={() => setTab("todos")}>Todos</button>
@@ -116,9 +96,9 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
         pedidos={pedidos}
         filtros={filtros}
         setFiltros={setFiltros}
-        modo={modoFecha}
-        mostrarFiltroVendedor={true}
-        mostrarFiltroAlmacenero={true}
+        mostrarFecha={mostrarFecha}
+        mostrarFiltroVendedor={tab !== "mis-pedidos"}
+        mostrarFiltroAlmacenero={mostrarFiltroAlmacenero}
       />
 
       {loading ? (
@@ -126,38 +106,30 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
       ) : filtrados.length === 0 ? (
         <div className="empty-state">
           <ClipboardList size={30} style={{ opacity: 0.4, marginBottom: 10 }} />
-          <div>
-            {pedidos.length === 0
-              ? (esVendedor ? "Aún no creaste ningún pedido." : "No hay pedidos por ahora.")
-              : "Ningún pedido coincide con el filtro."}
-          </div>
+          <div>No hay pedidos en esta pestaña o filtro.</div>
         </div>
       ) : (
         filtrados.map(p => {
-          const notifPendiente = esVendedor && p.estado === "finalizado" && !p.vistoPorVendedor;
+          const notifPendiente = p.vendedorId === user.id && p.estado === "finalizado" && !p.vistoPorVendedor;
           return (
             <div className="pedido-row" key={p.id} onClick={() => onOpen(p.id)}>
               {notifPendiente && <span className="notif-dot" />}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="pedido-id">{p.id}</div>
                 <div className="pedido-cliente">{p.cliente}</div>
-                <div className="pedido-meta">{p.items.length} códigos · {fmtTime(p.creadoEn)}</div>
+                <div className="pedido-meta">
+                  {p.items.length} códigos · {fmtTime(p.creadoEn)}
+                  {p.estado === "finalizado" && p.finalizadoEn && ` · Finalizado ${fmtTime(p.finalizadoEn)}`}
+                </div>
                 <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                   <span className="name-chip vendedor">V: {p.vendedorNombre}</span>
                   {p.almaceneroNombre && <span className="name-chip almacenero">A: {p.almaceneroNombre}</span>}
-                  {p.modoAtencion && (
-                    <span className={`name-chip ${p.modoAtencion === "separar" ? "almacenero" : "vendedor"}`}>
-                      {p.modoAtencion === "separar" ? "Separar" : "Confirmar"}
-                    </span>
-                  )}
                 </div>
-                {p.estado !== "pendiente" && <BarraProgreso pedido={p} />}
               </div>
               <span className={`status-pill status-${p.estado}`}>
                 {p.estado === "pendiente" && "Pendiente"}
                 {p.estado === "tomado" && "En proceso"}
                 {p.estado === "finalizado" && "Finalizado"}
-                {p.estado === "cancelado" && "Cancelado"}
               </span>
             </div>
           );

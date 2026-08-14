@@ -83,7 +83,7 @@ const SESION_KEY = "despacho-sesion";
 export default function App() {
   const [user, setUser] = useState(null);
   const [cargandoSesion, setCargandoSesion] = useState(true);
-  const [vista, setVista] = useState("home"); // home | crear | detalle | estadisticas
+  const [vista, setVista] = useState("home"); // home | crear | detalle
   const [pedidoActivoId, setPedidoActivoId] = useState(null);
   const [pedidos, setPedidos] = useState([]);
   const [cargandoPedidos, setCargandoPedidos] = useState(true);
@@ -96,8 +96,6 @@ export default function App() {
     setCargandoSesion(false);
   }, []);
 
-  // Tanto vendedores como almaceneros ven todas las listas enviadas —
-  // ya no se filtra por vendedorId — para que cualquiera pueda tomarlas.
   const cargarPedidos = useCallback(async () => {
     try {
       const lista = await api.listarPedidos();
@@ -125,7 +123,7 @@ export default function App() {
 
   const [errorCrear, setErrorCrear] = useState("");
 
-  async function crearPedido({ cliente, items, fotoOriginal, modoAtencion }) {
+  async function crearPedido({ cliente, items, foto }) {
     setErrorCrear("");
     try {
       const nuevoPedido = await api.crearPedido({
@@ -133,8 +131,7 @@ export default function App() {
         vendedorId: user.id,
         vendedorNombre: user.nombre,
         items,
-        fotoOriginal,
-        modoAtencion
+        foto
       });
       setPedidoActivoId(nuevoPedido.id);
       setVista("detalle");
@@ -166,18 +163,25 @@ export default function App() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
             <div>
               <div className="page-title">{user.rol === "vendedor" ? `Hola, ${user.nombre.split(" ")[0]}` : "Pedidos por despachar"}</div>
-              <div className="page-sub">
-                Todas las listas enviadas por los vendedores — cualquiera puede tomarlas, separarlas o confirmarlas.
-              </div>
+              <div className="page-sub">Todas las listas enviadas — cualquiera puede tomar y despachar un pedido.</div>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 6 }}>
               <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }} onClick={() => setVista("estadisticas")}>
                 <BarChart3 size={13} /> Estadísticas
               </button>
-              <MenuExportar pedidos={pedidos} />
+              {user.rol === "almacenero" && <MenuExportar pedidos={pedidos} />}
             </div>
           </div>
           <ListaPedidos pedidos={pedidos} user={user} onOpen={abrirPedido} loading={cargandoPedidos} />
+        </div>
+      )}
+
+      {vista === "estadisticas" && (
+        <div className="container">
+          <button className="btn btn-outline btn-sm" style={{ marginBottom: 16 }} onClick={() => setVista("home")}>
+            ← Volver
+          </button>
+          <EstadisticasPanel pedidos={pedidos} />
         </div>
       )}
 
@@ -187,10 +191,6 @@ export default function App() {
 
       {vista === "detalle" && pedidoActivoId && (
         <DetallePedido pedidoId={pedidoActivoId} user={user} onVolver={() => { setVista("home"); cargarPedidos(); }} />
-      )}
-
-      {vista === "estadisticas" && (
-        <EstadisticasPanel pedidos={pedidos} onVolver={() => setVista("home")} />
       )}
 
       {vista === "home" && user.rol === "vendedor" && (

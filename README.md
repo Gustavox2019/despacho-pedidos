@@ -1,9 +1,9 @@
 # Despacho — App de pedidos (vendedores ↔ almacén)
 
-Proyecto real con backend propio (Node.js) y base de datos en la nube (Supabase,
-basada en Postgres), para que los pedidos y el chat existan aunque tu PC esté
-apagada. El backend corre en tu PC por ahora; cuando quieras que funcione
-24/7, se sube gratis a un servicio como Render (ver el final de este documento).
+Proyecto real con backend propio (Node.js) y base de datos en la nube (Firebase),
+para que los pedidos y el chat existan aunque tu PC esté apagada. El backend
+corre en tu PC por ahora; cuando quieras que funcione 24/7, se sube gratis a un
+servicio como Render (ver el final de este documento).
 
 ## Estructura
 
@@ -15,27 +15,20 @@ proyecto/
 
 ---
 
-## Paso 1 — Crear el proyecto de Supabase (base de datos en la nube, gratis)
+## Paso 1 — Crear el proyecto de Firebase (base de datos en la nube, gratis)
 
-1. Entra a https://supabase.com → **Start your project** y crea un proyecto
-   nuevo (puedes llamarlo "despacho-pedidos"). No necesitas tarjeta de crédito.
-   Elige cualquier región cercana (ej. "South America (São Paulo)") y guarda
-   la contraseña de base de datos que te pide (no la necesitas para esta app,
-   pero consérvala igual).
-2. Ya adentro del proyecto, ve a **SQL Editor** (ícono en la barra lateral) →
-   **New query**.
-3. Abre el archivo `backend/supabase-schema.sql` (viene incluido en este
-   proyecto), copia **todo su contenido**, pégalo en el editor SQL de
-   Supabase, y dale **Run**. Esto crea las tablas de pedidos, chats y
-   usuarios — se corre una sola vez.
-4. Ve a **⚙️ Project Settings → API**. Ahí vas a necesitar dos datos para el
-   paso 2:
-   - **Project URL**
-   - **service_role key** (en "Project API keys" — es la clave secreta, NO
-     la "anon public")
+1. Entra a https://console.firebase.google.com y crea un proyecto nuevo (puedes
+   llamarlo "despacho-pedidos"). No necesitas tarjeta de crédito.
+2. Dentro del proyecto, ve a **Build → Firestore Database → Create database**.
+   Elige modo **producción** y cualquier región cercana (ej. `southamerica-east1`).
+3. Ve a **⚙️ Configuración del proyecto → Cuentas de servicio (Service accounts)**.
+4. Click en **"Generar nueva clave privada"** (Generate new private key).
+   Se descarga un archivo `.json`.
+5. Renombra ese archivo a `serviceAccountKey.json` y colócalo dentro de la
+   carpeta `backend/` (junto a `package.json`).
 
-   ⚠️ La `service_role key` es una credencial sensible — no la compartas ni
-   la subas a un repositorio público. Le da acceso total a la base de datos.
+   ⚠️ Este archivo es una credencial sensible — no lo compartas ni lo subas
+   a un repositorio público.
 
 ## Paso 2 — Configurar el backend
 
@@ -48,8 +41,8 @@ cp .env.example .env
 Abre `.env` y completa:
 - `GEMINI_API_KEY` → tu clave gratis de https://aistudio.google.com/apikey
   (necesaria para que la app lea las fotos de los pedidos)
-- `SUPABASE_URL` → el "Project URL" del paso 1
-- `SUPABASE_SERVICE_ROLE_KEY` → la "service_role key" del paso 1
+- `FIREBASE_SERVICE_ACCOUNT_PATH` → déjalo como `./serviceAccountKey.json` si
+  seguiste el paso 1 tal cual.
 
 Luego corre el servidor:
 
@@ -57,8 +50,7 @@ Luego corre el servidor:
 npm run dev
 ```
 
-Debe aparecer: `Supabase conectado correctamente.` y luego
-`Backend de Despacho corriendo en http://localhost:4000`
+Debe aparecer: `Backend de Despacho corriendo en http://localhost:4000`
 
 ## Paso 3 — Configurar el frontend
 
@@ -83,36 +75,14 @@ PC en la red local, por ejemplo `http://192.168.1.20:5173`, y ajusta
 
 1. Cada persona entra, pone su nombre/correo y elige si es **Vendedor** o
    **Almacenero** (login simple por ahora, sin contraseña).
-2. El vendedor crea un pedido: nombre del cliente + la lista, que puede
-   subir como foto (a mano o captura de Excel, la IA la transcribe), o como
-   archivo Excel/CSV real (se leen los códigos directamente, sin IA). La
-   foto original que se sube queda guardada junto al pedido, visible en su
-   detalle.
-3. **Cualquiera** (vendedor o almacenero) puede tomar un pedido pendiente, y
-   elige cómo atenderlo: **Separar** (abre el checklist completo para marcar
-   cada código y armar cajas) o **Confirmar** (validación rápida, sin marcar
-   línea por línea). Al finalizar, pone la cantidad de cajas. Esto notifica
-   al vendedor.
-4. Todos ven el listado completo de pedidos enviados (pestañas Pendientes /
-   Tomados por mí / Todos), con filtros por cliente, fecha, vendedor o quien
-   lo tomó.
-5. La sección **Estadísticas** (botón arriba del listado) muestra, en
-   porcentaje, quién ha separado más listas que los demás.
-6. Cualquiera puede descargar las etiquetas de las cajas (una imagen por
+2. El vendedor crea un pedido: nombre del cliente + foto de la lista (a mano
+   o captura de Excel). La IA la transcribe y contrasta cada código contra tu
+   catálogo (`backend/src/codigos.json`, ~20,000 códigos).
+3. El almacenero revisa el pedido, marca check/equis por código, pone la
+   cantidad de cajas y finaliza. Esto notifica al vendedor.
+4. Cualquiera puede descargar las etiquetas de las cajas (una imagen por
    caja) desde el detalle del pedido ya finalizado.
-7. Cada pedido tiene su propio chat, guardado, para dudas de stock — y un
-   botón de **WhatsApp** en el detalle para reportar un problema puntual con
-   ese pedido a un número de soporte (configúralo con
-   `VITE_WHATSAPP_SOPORTE` en el `.env` del frontend, ver
-   `frontend/.env.example`).
-
-## Nota técnica: foto original guardada en la base de datos
-
-La foto original se guarda directamente en una columna de la tabla `pedidos`
-en Supabase (no se usa Supabase Storage). La app ya redimensiona la foto a
-1600px antes de subirla, así que normalmente entra sin problema. Si en el
-futuro subes fotos muy detalladas y ves errores al crear el pedido, avísame
-y lo cambiamos a Supabase Storage (guardando solo la URL en la fila).
+5. Cada pedido tiene su propio chat, guardado, para dudas de stock.
 
 ## Pendiente conocido: columna "Piso"
 
@@ -137,7 +107,7 @@ necesitas:
 ## Siguiente paso: que funcione sin depender de tu PC
 
 Ahora mismo el frontend y el backend corren en tu PC. La base de datos ya
-está en la nube (Supabase), pero para que la app entera funcione con tu PC
+está en la nube (Firebase), pero para que la app entera funcione con tu PC
 apagada, el backend también debe subirse a un servicio en la nube. La forma
 más simple y gratuita: **Render.com** (o Railway) — subes la carpeta
 `backend/`, configuras las mismas variables de entorno del `.env`, y te da

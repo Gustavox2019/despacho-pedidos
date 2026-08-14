@@ -1,18 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, CheckCheck, ClipboardList, CheckCircle2, XCircle,
-  Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus,
-  Image as ImageIcon, MessageCircle, Layers, BadgeCheck
+  Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus, Image as ImageIcon
 } from "lucide-react";
-import { fmtTime, uid, calcularProgreso } from "../helpers.js";
+import { fmtTime, fmtFechaHora, uid } from "../helpers.js";
 import { api } from "../api.js";
 import { descargarEtiquetas } from "../etiquetas.js";
 import ChatPanel from "./ChatPanel.jsx";
 
-// Número de WhatsApp de soporte al que se reporta un problema con un
-// pedido. Configúralo con VITE_WHATSAPP_SOPORTE en el .env del frontend
-// (formato internacional sin "+", ej. 51987654321).
-const WHATSAPP_SOPORTE = import.meta.env.VITE_WHATSAPP_SOPORTE || "";
+const NUMERO_WHATSAPP = import.meta.env.VITE_WHATSAPP_NUMBER;
 
 export default function DetallePedido({ pedidoId, user, onVolver }) {
   const [pedido, setPedido] = useState(null);
@@ -22,8 +18,8 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   const [nuevaCantidad, setNuevaCantidad] = useState(1);
   const [nuevoCodigo, setNuevoCodigo] = useState("");
   const [agregando, setAgregando] = useState(false);
-  const [cancelando, setCancelando] = useState(false);
-  const pedidoRef = useRef(null); // última versión conocida, para no pisar ediciones locales con el poll
+  const [verFoto, setVerFoto] = useState(false);
+  const pedidoRef = useRef(null);
 
   const cargar = useCallback(async () => {
     try {
@@ -42,7 +38,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
 
   useEffect(() => {
     (async () => {
-      if (pedido && user.rol === "vendedor" && pedido.estado === "finalizado" && !pedido.vistoPorVendedor) {
+      if (pedido && pedido.vendedorId === user.id && pedido.estado === "finalizado" && !pedido.vistoPorVendedor) {
         const actualizado = await api.actualizarPedido(pedidoId, { vistoPorVendedor: true });
         pedidoRef.current = actualizado;
         setPedido(actualizado);
@@ -51,7 +47,6 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pedido?.estado, pedido?.vistoPorVendedor]);
 
-  // Envía el cambio en segundo plano, sin bloquear la interacción del usuario.
   function guardarEnSegundoPlano(patch) {
     api.actualizarPedido(pedidoId, patch)
       .then(actualizado => { pedidoRef.current = actualizado; })
@@ -59,10 +54,8 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   }
 
   function updateItemCheck(itemId, patch) {
-    // Actualización optimista: se ve al instante, se guarda de fondo.
     const nuevosItems = pedido.items.map(it => it.id === itemId ? { ...it, ...patch } : it);
-    const actualizadoLocal = { ...pedido, items: nuevosItems };
-    setPedido(actualizadoLocal);
+    setPedido({ ...pedido, items: nuevosItems });
     guardarEnSegundoPlano({ items: nuevosItems });
   }
 
@@ -82,11 +75,11 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     }
   }
 
-  async function tomarPedido() {
+  async function tomarPedido(tipo) {
     setTomando(true);
     try {
       const actualizado = await api.actualizarPedido(pedidoId, {
-        estado: "tomado", almaceneroId: user.id, almaceneroNombre: user.nombre, tomadoEn: Date.now()
+        estado: "tomado", tipo, almaceneroId: user.id, almaceneroNombre: user.nombre, tomadoEn: Date.now()
       });
       pedidoRef.current = actualizado;
       setPedido(actualizado);
@@ -95,21 +88,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     }
   }
 
-  async function cancelarPedido() {
-    if (!window.confirm("¿Seguro que quieres cancelar este pedido? Esta acción no se puede deshacer.")) return;
-    setCancelando(true);
-    try {
-      const actualizado = await api.actualizarPedido(pedidoId, { estado: "cancelado" });
-      pedidoRef.current = actualizado;
-      setPedido(actualizado);
-    } catch (err) {
-      console.error("No se pudo cancelar el pedido:", err);
-    } finally {
-      setCancelando(false);
-    }
-  }
-
-  async function finalizar() {
+  async function finalizarSeparado() {
     setGuardando(true);
     try {
       const actualizado = await api.actualizarPedido(pedidoId, {
@@ -122,28 +101,34 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     }
   }
 
+  async function confirmarPedido() {
+    setGuardando(true);
+    try {
+      const actualizado = await api.actualizarPedido(pedidoId, {
+        estado: "finalizado", finalizadoEn: Date.now(), vistoPorVendedor: false
+      });
+      pedidoRef.current = actualizado;
+      setPedido(actualizado);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
   if (!pedido) {
     return <div className="container"><div className="empty-state"><Loader2 className="spin" size={26} /></div></div>;
   }
 
-  const esVendedor = user.rol === "vendedor";
-  const esPedidoTomadoPorMi = pedido.almaceneroId === user.id;
-  const esModoConfirmar = pedido.modoAtencion === "confirmar";
-  // Cualquiera (vendedor o almacenero) puede tomar y preparar un pedido —
-  // ya no está restringido al rol almacenero.
-  const puedeMarcar = pedido.estado === "tomado" && esPedidoTomadoPorMi;
-  const vendedorPuedeAgregar = esVendedor && pedido.estado !== "finalizado";
-  // Solo el vendedor que creó el pedido puede cancelarlo, y solo mientras
-  // no esté finalizado ni ya cancelado.
-  const puedeCancelar = esVendedor && pedido.vendedorId === user.id
-    && pedido.estado !== "finalizado" && pedido.estado !== "cancelado";
+  const yoLoTome = pedido.almaceneroId === user.id;
+  const puedeMarcar = pedido.estado === "tomado" && yoLoTome && pedido.tipo === "separar";
+  const puedeConfirmar = pedido.estado === "tomado" && yoLoTome && pedido.tipo === "confirmar";
+  const puedeAgregarProducto = pedido.estado !== "finalizado";
   const todosMarcados = pedido.items.every(it => it.check === "ok" || it.check === "no");
   const cajasValidas = Number(cajasInput) > 0;
-  // En modo "confirmar" no se exige marcar cada línea, solo la cantidad de cajas.
-  const puedeFinalizar = puedeMarcar && cajasValidas && (esModoConfirmar || todosMarcados);
+  const puedeFinalizar = puedeMarcar && todosMarcados && cajasValidas;
 
-  const mensajeWhatsapp = encodeURIComponent(`Tengo un problema con el pedido ${pedido.id}`);
-  const linkWhatsapp = WHATSAPP_SOPORTE ? `https://wa.me/${WHATSAPP_SOPORTE}?text=${mensajeWhatsapp}` : null;
+  const linkWhatsapp = NUMERO_WHATSAPP
+    ? `https://wa.me/${NUMERO_WHATSAPP}?text=${encodeURIComponent(`Tengo un problema con el pedido ${pedido.id}`)}`
+    : null;
 
   return (
     <div className="container">
@@ -152,17 +137,11 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           <div className="pedido-id" style={{ fontSize: 13 }}>{pedido.id}</div>
           <div className="page-title">{pedido.cliente}</div>
         </div>
-        <a
-          className="btn btn-outline btn-sm"
-          style={{ whiteSpace: "nowrap", color: "var(--green)", borderColor: "var(--green-dim)" }}
-          href={linkWhatsapp || undefined}
-          target="_blank" rel="noopener noreferrer"
-          title={linkWhatsapp ? "Reportar un problema con este pedido por WhatsApp" : "Falta configurar VITE_WHATSAPP_SOPORTE"}
-          onClick={e => { if (!linkWhatsapp) e.preventDefault(); }}
-          aria-disabled={!linkWhatsapp}
-        >
-          <MessageCircle size={13} /> WhatsApp
-        </a>
+        {linkWhatsapp && (
+          <a href={linkWhatsapp} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap", color: "#25D366", borderColor: "#25D366" }}>
+            <MessageSquare size={14} /> WhatsApp
+          </a>
+        )}
       </div>
       <div className="page-sub">
         Vendedor: {pedido.vendedorNombre} · {fmtTime(pedido.creadoEn)}{" "}
@@ -170,40 +149,21 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           {pedido.estado === "pendiente" && "Pendiente"}
           {pedido.estado === "tomado" && "En proceso"}
           {pedido.estado === "finalizado" && "Finalizado"}
-          {pedido.estado === "cancelado" && "Cancelado"}
         </span>
       </div>
 
-      {pedido.estado !== "pendiente" && (() => {
-        const pct = calcularProgreso(pedido);
-        const marcados = pedido.items.filter(it => it.check === "ok" || it.check === "no").length;
-        return (
-          <div style={{ marginBottom: 16 }}>
-            <div className="progreso-wrap" style={{ marginTop: 0 }}>
-              <div className="progreso-track">
-                <div className={`progreso-fill ${pct >= 100 ? "completo" : ""}`} style={{ width: `${pct}%` }} />
-              </div>
-              <div className="progreso-label">{pct}%</div>
-            </div>
-            {pedido.estado === "tomado" && pedido.modoAtencion !== "confirmar" && (
-              <div className="helper-text" style={{ marginTop: 4, textAlign: "left" }}>
-                {marcados} de {pedido.items.length} código(s) revisados
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      {pedido.estado === "finalizado" && pedido.finalizadoEn && (
+        <div className="page-sub" style={{ marginTop: -14 }}>
+          <CheckCheck size={12} style={{ verticalAlign: -2 }} /> Finalizado el {fmtFechaHora(pedido.finalizadoEn)}
+        </div>
+      )}
 
-      {(pedido.fotoOriginal || pedido.tieneFoto) && (
-        <div className="card" style={{ marginBottom: 14 }}>
-          <div className="section-label" style={{ marginTop: 0 }}><ImageIcon size={13} /> Foto original de la lista</div>
-          {pedido.fotoOriginal ? (
-            <a href={pedido.fotoOriginal} target="_blank" rel="noopener noreferrer" title="Ver en tamaño completo">
-              <img src={pedido.fotoOriginal} alt="Foto original del pedido" className="upload-preview" style={{ marginBottom: 0, cursor: "zoom-in" }} />
-            </a>
-          ) : (
-            <div className="helper-text">Cargando foto…</div>
-          )}
+      {pedido.foto && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 800, marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
+            <ImageIcon size={12} /> Foto original de la lista
+          </div>
+          <img src={pedido.foto} className="foto-thumb" alt="Foto original de la lista" onClick={() => setVerFoto(true)} />
         </div>
       )}
 
@@ -211,88 +171,85 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         <div className="banner banner-warn" style={{ background: "rgba(63,198,193,0.08)", borderColor: "var(--teal-dim)", color: "var(--teal)" }}>
           <PackageCheck size={16} />
           <div>
-            Tomado por {pedido.almaceneroNombre}{pedido.tomadoEn ? ` · ${fmtTime(pedido.tomadoEn)}` : ""}
-            {pedido.modoAtencion && <> · <strong>{pedido.modoAtencion === "separar" ? "Separando" : "Confirmando"}</strong></>}
+            {pedido.tipo === "confirmar" ? "Confirmado" : "Tomado"} por {pedido.almaceneroNombre}{pedido.tomadoEn ? ` · ${fmtTime(pedido.tomadoEn)}` : ""}
           </div>
         </div>
       )}
 
-      {pedido.estado === "finalizado" && user.rol === "vendedor" && (
+      {pedido.estado === "finalizado" && pedido.vendedorId === user.id && (
         <div className="banner banner-success">
           <CheckCheck size={16} />
-          <div>Pedido finalizado por {pedido.almaceneroNombre || "almacén"} · {pedido.cajas} caja(s) preparadas.</div>
-        </div>
-      )}
-
-      {pedido.estado === "cancelado" && (
-        <div className="banner banner-warn" style={{ background: "rgba(239,91,91,0.08)", borderColor: "var(--red-dim)", color: "var(--red)" }}>
-          <XCircle size={16} />
-          <div>Este pedido fue cancelado por el vendedor.</div>
+          <div>
+            {pedido.tipo === "confirmar"
+              ? `Pedido confirmado por ${pedido.almaceneroNombre || "almacén"} · ${fmtFechaHora(pedido.finalizadoEn)}.`
+              : `Pedido finalizado por ${pedido.almaceneroNombre || "almacén"} · ${pedido.cajas} caja(s) preparadas · ${fmtFechaHora(pedido.finalizadoEn)}.`}
+          </div>
         </div>
       )}
 
       {pedido.estado === "pendiente" && (
         <div className="card" style={{ textAlign: "center" }}>
           <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
-            El vendedor indicó que este pedido es para{" "}
-            <strong style={{ color: pedido.modoAtencion === "confirmar" ? "var(--teal)" : "var(--fg)" }}>
-              {pedido.modoAtencion === "confirmar" ? "Confirmar" : "Separar"}
-            </strong>. Nadie lo ha tomado todavía.
+            Nadie ha tomado este pedido todavía. ¿Qué vas a hacer con él?
           </div>
-          <button
-            className={`btn ${pedido.modoAtencion === "confirmar" ? "btn-teal" : "btn-primary"} btn-block`}
-            disabled={tomando}
-            onClick={tomarPedido}
-          >
-            {tomando ? <Loader2 className="spin" size={15} /> : (
-              <>{pedido.modoAtencion === "confirmar" ? <BadgeCheck size={14} /> : <Layers size={14} />} Tomar pedido</>
-            )}
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-primary" style={{ flex: 1 }} disabled={tomando} onClick={() => tomarPedido("separar")}>
+              {tomando ? <Loader2 className="spin" size={15} /> : "Separar pedido"}
+            </button>
+            <button className="btn btn-outline" style={{ flex: 1 }} disabled={tomando} onClick={() => tomarPedido("confirmar")}>
+              Solo confirmar
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>
+            "Separar" arma el checklist físico y las cajas. "Confirmar" solo valida que hay stock, sin armar el pedido.
+          </div>
         </div>
       )}
 
-      {pedido.estado === "tomado" && !esPedidoTomadoPorMi && (
-        <div className="banner banner-warn"><ClipboardList size={16} /> Este pedido ya lo está {pedido.modoAtencion === "confirmar" ? "confirmando" : "preparando"} {pedido.almaceneroNombre}.</div>
+      {pedido.estado === "tomado" && !yoLoTome && (
+        <div className="banner banner-warn"><ClipboardList size={16} /> Este pedido ya lo está {pedido.tipo === "confirmar" ? "confirmando" : "preparando"} {pedido.almaceneroNombre}.</div>
       )}
 
       <div className="section-label"><ClipboardList size={13} /> Checklist</div>
-      <table className="item-table">
-        <tbody>
-          {pedido.items.map(it => (
-            <tr className="item-row" key={it.id}>
-              <td style={{ width: 34, fontFamily: "var(--mono)", fontSize: 13, color: "var(--muted)" }}>{it.cantidad}</td>
-              <td>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 13 }}>{it.codigo}</div>
-                {it.piso && <div style={{ fontSize: 11, color: "var(--muted)" }}>Piso: {it.piso}</div>}
-              </td>
-              <td style={{ width: puedeMarcar && !esModoConfirmar ? 190 : 0 }}>
-                {puedeMarcar && !esModoConfirmar ? (
-                  <div className="check-controls">
-                    <button className={`chk-btn ${it.check === "ok" ? "active-ok" : ""}`}
-                      onClick={() => updateItemCheck(it.id, { check: it.check === "ok" ? null : "ok" })}>
-                      <CheckCircle2 size={16} />
-                    </button>
-                    <button className={`chk-btn ${it.check === "no" ? "active-no" : ""}`}
-                      onClick={() => updateItemCheck(it.id, { check: it.check === "no" ? null : "no" })}>
-                      <XCircle size={16} />
-                    </button>
-                    <input type="text" className="txt-mini" placeholder="detalle" value={it.texto || ""}
-                      onChange={e => updateItemCheck(it.id, { texto: e.target.value })} />
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    {it.check === "ok" && <CheckCircle2 size={16} color="var(--green)" />}
-                    {it.check === "no" && <XCircle size={16} color="var(--red)" />}
-                    {it.texto && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{it.texto}</span>}
-                  </div>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="checklist-box">
+        <table className="item-table">
+          <tbody>
+            {pedido.items.map(it => (
+              <tr className="item-row" key={it.id}>
+                <td style={{ width: 34, fontFamily: "var(--mono)", fontSize: 13, color: "var(--muted)" }}>{it.cantidad}</td>
+                <td>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: 13 }}>{it.codigo}</div>
+                  {it.piso && <div style={{ fontSize: 11, color: "var(--muted)" }}>Piso: {it.piso}</div>}
+                </td>
+                <td style={{ width: puedeMarcar ? 190 : 0 }}>
+                  {puedeMarcar ? (
+                    <div className="check-controls">
+                      <button className={`chk-btn ${it.check === "ok" ? "active-ok" : ""}`}
+                        onClick={() => updateItemCheck(it.id, { check: it.check === "ok" ? null : "ok" })}>
+                        <CheckCircle2 size={16} />
+                      </button>
+                      <button className={`chk-btn ${it.check === "no" ? "active-no" : ""}`}
+                        onClick={() => updateItemCheck(it.id, { check: it.check === "no" ? null : "no" })}>
+                        <XCircle size={16} />
+                      </button>
+                      <input type="text" className="txt-mini" placeholder="detalle" value={it.texto || ""}
+                        onChange={e => updateItemCheck(it.id, { texto: e.target.value })} />
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {it.check === "ok" && <CheckCircle2 size={16} color="var(--green)" />}
+                      {it.check === "no" && <XCircle size={16} color="var(--red)" />}
+                      {it.texto && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{it.texto}</span>}
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-      {vendedorPuedeAgregar && (
+      {puedeAgregarProducto && (
         <div className="card" style={{ marginTop: 14 }}>
           <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 800, marginBottom: 10 }}>
             Agregar producto a este pedido
@@ -316,21 +273,35 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
             <label><Boxes size={12} style={{ verticalAlign: -2 }} /> Cantidad de cajas del pedido</label>
             <input type="number" min="1" value={cajasInput} onChange={e => setCajasInput(e.target.value)} />
           </div>
-          {!esModoConfirmar && !todosMarcados && (
+          {!todosMarcados && (
             <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 10 }}>
               Marca check o equis en todos los códigos para poder finalizar.
             </div>
           )}
-          <button className="btn btn-primary btn-block" disabled={!puedeFinalizar || guardando} onClick={finalizar}>
-            {guardando ? <Loader2 className="spin" size={15} /> : (esModoConfirmar ? "Confirmar pedido" : "Finalizar pedido")}
+          <button className="btn btn-primary btn-block" disabled={!puedeFinalizar || guardando} onClick={finalizarSeparado}>
+            {guardando ? <Loader2 className="spin" size={15} /> : "Finalizar pedido"}
           </button>
         </div>
       )}
 
-      {pedido.estado === "finalizado" && (
+      {puedeConfirmar && (
+        <div className="card" style={{ marginTop: 18 }}>
+          <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 10 }}>
+            Confirma que hay stock disponible para este pedido (sin armar cajas).
+          </div>
+          <button className="btn btn-primary btn-block" disabled={guardando} onClick={confirmarPedido}>
+            {guardando ? <Loader2 className="spin" size={15} /> : "Confirmar pedido"}
+          </button>
+        </div>
+      )}
+
+      {pedido.estado === "finalizado" && pedido.tipo !== "confirmar" && pedido.cajas > 0 && (
         <div className="card" style={{ marginTop: 18, textAlign: "center" }}>
           <div className="cajas-count-badge" style={{ marginBottom: 12 }}>
             <Boxes size={13} /> {pedido.cajas} caja(s) preparadas
+          </div>
+          <div className="helper-text" style={{ marginTop: -6, marginBottom: 12 }}>
+            Finalizado el {fmtFechaHora(pedido.finalizadoEn)}
           </div>
           <button className="btn btn-teal btn-block" onClick={() => descargarEtiquetas(pedido)}>
             <Download size={15} /> Descargar etiquetas para las cajas
@@ -341,19 +312,16 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
       <div className="section-label"><MessageSquare size={13} /> Chat del pedido</div>
       <ChatPanel pedidoId={pedido.id} user={user} />
 
-      <div style={{ marginTop: 22, display: "flex", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ marginTop: 22 }}>
         <button className="btn btn-outline" onClick={onVolver}><ChevronLeft size={14} /> Volver</button>
-        {puedeCancelar && (
-          <button
-            className="btn btn-outline"
-            style={{ color: "var(--red)", borderColor: "var(--red-dim)" }}
-            disabled={cancelando}
-            onClick={cancelarPedido}
-          >
-            {cancelando ? <Loader2 className="spin" size={15} /> : <XCircle size={14} />} Cancelar pedido
-          </button>
-        )}
       </div>
+
+      {verFoto && (
+        <div className="lightbox-overlay" onClick={() => setVerFoto(false)}>
+          <button className="lightbox-close" onClick={() => setVerFoto(false)}>✕</button>
+          <img src={pedido.foto} alt="Foto original en tamaño completo" />
+        </div>
+      )}
     </div>
   );
 }

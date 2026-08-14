@@ -6,7 +6,7 @@ adicional sobre su cuenta.
 ## 1. Crear el Client ID (gratis, en la consola de Google)
 
 1. Ve a https://console.cloud.google.com y crea un proyecto (o usa uno que
-   ya tengas). No hace falta que sea el mismo de Supabase.
+   ya tengas). No hace falta que sea el mismo de Firebase.
 2. Menú ☰ → **APIs & Services → OAuth consent screen**.
    - User Type: **External** → Create.
    - Completa nombre de la app ("Despacho"), tu correo en "User support
