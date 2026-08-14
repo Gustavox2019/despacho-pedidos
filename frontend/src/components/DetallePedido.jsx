@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, CheckCheck, ClipboardList, CheckCircle2, XCircle,
-  Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus, Image as ImageIcon
+  Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus, Image as ImageIcon, Layers
 } from "lucide-react";
 import { fmtTime, fmtFechaHora, uid } from "../helpers.js";
 import { api } from "../api.js";
@@ -75,11 +75,11 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     }
   }
 
-  async function tomarPedido(tipo) {
+  async function tomarPedido() {
     setTomando(true);
     try {
       const actualizado = await api.actualizarPedido(pedidoId, {
-        estado: "tomado", tipo, almaceneroId: user.id, almaceneroNombre: user.nombre, tomadoEn: Date.now()
+        estado: "tomado", almaceneroId: user.id, almaceneroNombre: user.nombre, tomadoEn: Date.now()
       });
       pedidoRef.current = actualizado;
       setPedido(actualizado);
@@ -106,6 +106,33 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     try {
       const actualizado = await api.actualizarPedido(pedidoId, {
         estado: "finalizado", finalizadoEn: Date.now(), vistoPorVendedor: false
+      });
+      pedidoRef.current = actualizado;
+      setPedido(actualizado);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  // El vendedor puede reabrir un pedido ya "confirmado" para que el
+  // almacén ahora sí lo separe y arme en cajas — se envía de nuevo con
+  // el checklist en blanco, como si acabara de llegar.
+  async function reenviarParaSeparar() {
+    const ok = window.confirm("Esto vuelve a enviar el pedido al almacén, ahora para que lo separen y armen en cajas. ¿Continuar?");
+    if (!ok) return;
+    setGuardando(true);
+    try {
+      const itemsReiniciados = pedido.items.map(it => ({ ...it, check: null, texto: "" }));
+      const actualizado = await api.actualizarPedido(pedidoId, {
+        estado: "pendiente",
+        tipo: "separar",
+        items: itemsReiniciados,
+        almaceneroId: null,
+        almaceneroNombre: null,
+        tomadoEn: null,
+        cajas: null,
+        finalizadoEn: null,
+        vistoPorVendedor: true
       });
       pedidoRef.current = actualizado;
       setPedido(actualizado);
@@ -187,22 +214,32 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         </div>
       )}
 
+      {pedido.estado === "finalizado" && pedido.tipo === "confirmar" && pedido.vendedorId === user.id && (
+        <div className="card">
+          <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 10 }}>
+            ¿Este pedido sí se tiene que armar físicamente? Puedes reenviarlo al almacén para que lo separen en cajas.
+          </div>
+          <button className="btn btn-outline btn-block" disabled={guardando} onClick={reenviarParaSeparar}>
+            {guardando ? <Loader2 className="spin" size={15} /> : (<><Layers size={14} /> Separar pedido</>)}
+          </button>
+        </div>
+      )}
+
       {pedido.estado === "pendiente" && (
         <div className="card" style={{ textAlign: "center" }}>
           <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
-            Nadie ha tomado este pedido todavía. ¿Qué vas a hacer con él?
+            El vendedor indicó que este pedido es para{" "}
+            <strong style={{ color: pedido.tipo === "confirmar" ? "var(--teal)" : "var(--text)" }}>
+              {pedido.tipo === "confirmar" ? "Confirmar" : "Separar"}
+            </strong>. Nadie lo ha tomado todavía.
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-primary" style={{ flex: 1 }} disabled={tomando} onClick={() => tomarPedido("separar")}>
-              {tomando ? <Loader2 className="spin" size={15} /> : "Separar pedido"}
-            </button>
-            <button className="btn btn-outline" style={{ flex: 1 }} disabled={tomando} onClick={() => tomarPedido("confirmar")}>
-              Solo confirmar
-            </button>
-          </div>
-          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>
-            "Separar" arma el checklist físico y las cajas. "Confirmar" solo valida que hay stock, sin armar el pedido.
-          </div>
+          <button
+            className={`btn ${pedido.tipo === "confirmar" ? "btn-teal" : "btn-primary"} btn-block`}
+            disabled={tomando}
+            onClick={tomarPedido}
+          >
+            {tomando ? <Loader2 className="spin" size={15} /> : "Tomar pedido"}
+          </button>
         </div>
       )}
 

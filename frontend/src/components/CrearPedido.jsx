@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
-import { Camera, Upload, Loader2, AlertTriangle, ClipboardList, Plus, Trash2, Layers, FileSpreadsheet, Clipboard } from "lucide-react";
+import { Camera, Upload, Loader2, AlertTriangle, ClipboardList, Plus, Trash2, Layers, FileSpreadsheet, Clipboard, BadgeCheck } from "lucide-react";
 import { resizeImageToBase64, uid } from "../helpers.js";
 import { parsearExcel } from "../excelParser.js";
 import { api } from "../api.js";
@@ -13,6 +13,7 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
   const [errorOcr, setErrorOcr] = useState("");
   const [items, setItems] = useState([]);
   const [enviando, setEnviando] = useState(false);
+  const [tipo, setTipo] = useState(null); // "separar" | "confirmar" — lo elige el vendedor antes de enviar
   const fileRefCamara = useRef(null);
   const fileRefGaleria = useRef(null);
   const fileRefExcel = useRef(null);
@@ -122,13 +123,13 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
   async function handleEnviar() {
     setEnviando(true);
     try {
-      await onCreado({ cliente: cliente.trim(), items, foto: fotoGuardada });
+      await onCreado({ cliente: cliente.trim(), items, foto: fotoGuardada, tipo });
     } finally {
       setEnviando(false);
     }
   }
 
-  const puedeEnviar = cliente.trim() && items.length > 0 && items.every(it => it.codigo.trim()) && !enviando;
+  const puedeEnviar = cliente.trim() && items.length > 0 && items.every(it => it.codigo.trim()) && !!tipo && !enviando;
 
   return (
     <div className="container crear-pedido-container">
@@ -249,6 +250,31 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
           <button className="btn btn-outline btn-sm" style={{ marginTop: 12 }} onClick={addManualRow}>
             <Plus size={13} /> Agregar línea manual
           </button>
+
+          <div className="field" style={{ marginTop: 22, marginBottom: 0 }}>
+            <label>¿Cómo debe atenderse este pedido? *</label>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                type="button"
+                className={`btn ${tipo === "separar" ? "btn-primary" : "btn-outline"}`}
+                style={{ flex: 1 }}
+                onClick={() => setTipo("separar")}
+              >
+                <Layers size={14} /> Separar
+              </button>
+              <button
+                type="button"
+                className={`btn ${tipo === "confirmar" ? "btn-teal" : "btn-outline"}`}
+                style={{ flex: 1 }}
+                onClick={() => setTipo("confirmar")}
+              >
+                <BadgeCheck size={14} /> Confirmar
+              </button>
+            </div>
+            <div className="helper-text" style={{ marginTop: 8 }}>
+              "Separar" arma el checklist físico y las cajas en almacén · "Confirmar" solo valida que hay stock, sin armar el pedido.
+            </div>
+          </div>
         </div>
 
         <div className="cg-actions">
