@@ -1,9 +1,9 @@
 # Despacho — App de pedidos (vendedores ↔ almacén)
 
-Proyecto real con backend propio (Node.js) y base de datos en la nube (Firebase),
-para que los pedidos y el chat existan aunque tu PC esté apagada. El backend
-corre en tu PC por ahora; cuando quieras que funcione 24/7, se sube gratis a un
-servicio como Render (ver el final de este documento).
+Proyecto real con backend propio (Node.js) y base de datos en la nube (Supabase,
+basada en Postgres), para que los pedidos y el chat existan aunque tu PC esté
+apagada. El backend corre en tu PC por ahora; cuando quieras que funcione
+24/7, se sube gratis a un servicio como Render (ver el final de este documento).
 
 ## Estructura
 
@@ -15,20 +15,19 @@ proyecto/
 
 ---
 
-## Paso 1 — Crear el proyecto de Firebase (base de datos en la nube, gratis)
+## Paso 1 — Crear el proyecto de Supabase (base de datos en la nube, gratis)
 
-1. Entra a https://console.firebase.google.com y crea un proyecto nuevo (puedes
-   llamarlo "despacho-pedidos"). No necesitas tarjeta de crédito.
-2. Dentro del proyecto, ve a **Build → Firestore Database → Create database**.
-   Elige modo **producción** y cualquier región cercana (ej. `southamerica-east1`).
-3. Ve a **⚙️ Configuración del proyecto → Cuentas de servicio (Service accounts)**.
-4. Click en **"Generar nueva clave privada"** (Generate new private key).
-   Se descarga un archivo `.json`.
-5. Renombra ese archivo a `serviceAccountKey.json` y colócalo dentro de la
-   carpeta `backend/` (junto a `package.json`).
+1. Entra a https://supabase.com → **Start your project** → crea un proyecto
+   (puedes llamarlo "despacho-pedidos"). No necesitas tarjeta de crédito.
+2. **SQL Editor → New query**. Abre el archivo `backend/supabase-schema.sql`
+   de este proyecto, copia todo su contenido, pégalo ahí y dale **Run**.
+   Esto crea las tablas que la app necesita — se hace una sola vez.
+3. Ve a **⚙️ Project Settings → API**. Ahí copia (los necesitas en el paso 2):
+   - **Project URL**
+   - **service_role key** (la clave secreta, NO la "anon public")
 
-   ⚠️ Este archivo es una credencial sensible — no lo compartas ni lo subas
-   a un repositorio público.
+   ⚠️ La `service_role key` es una credencial sensible — no la compartas ni
+   la subas a un repositorio público. Le da acceso total a la base de datos.
 
 ## Paso 2 — Configurar el backend
 
@@ -41,8 +40,8 @@ cp .env.example .env
 Abre `.env` y completa:
 - `GEMINI_API_KEY` → tu clave gratis de https://aistudio.google.com/apikey
   (necesaria para que la app lea las fotos de los pedidos)
-- `FIREBASE_SERVICE_ACCOUNT_PATH` → déjalo como `./serviceAccountKey.json` si
-  seguiste el paso 1 tal cual.
+- `SUPABASE_URL` → el "Project URL" del paso 1
+- `SUPABASE_SERVICE_ROLE_KEY` → la "service_role key" del paso 1
 
 Luego corre el servidor:
 
@@ -50,7 +49,8 @@ Luego corre el servidor:
 npm run dev
 ```
 
-Debe aparecer: `Backend de Despacho corriendo en http://localhost:4000`
+Debe aparecer: `Supabase conectado correctamente.` y luego
+`Backend de Despacho corriendo en http://localhost:4000`
 
 ## Paso 3 — Configurar el frontend
 
@@ -107,7 +107,7 @@ necesitas:
 ## Siguiente paso: que funcione sin depender de tu PC
 
 Ahora mismo el frontend y el backend corren en tu PC. La base de datos ya
-está en la nube (Firebase), pero para que la app entera funcione con tu PC
+está en la nube (Supabase), pero para que la app entera funcione con tu PC
 apagada, el backend también debe subirse a un servicio en la nube. La forma
 más simple y gratuita: **Render.com** (o Railway) — subes la carpeta
 `backend/`, configuras las mismas variables de entorno del `.env`, y te da

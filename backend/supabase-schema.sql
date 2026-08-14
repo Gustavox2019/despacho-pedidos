@@ -2,8 +2,8 @@
 -- Esquema de Supabase para "Despacho" (reemplaza a Firestore)
 -- ============================================================
 -- Cómo usarlo: en tu proyecto de Supabase, ve a "SQL Editor" →
--- "New query", pega TODO este archivo, y dale "Run". Se puede
--- correr una sola vez; ya crea todo lo que la app necesita.
+-- "New query", pega TODO este archivo, y dale "Run". Se corre
+-- una sola vez; ya crea todo lo que la app necesita.
 
 -- --- Tabla de usuarios (antes: colección "usuarios") ---
 -- El id es el "sub" que entrega Google al iniciar sesión.
@@ -21,13 +21,13 @@ create table if not exists pedidos (
   vendedor_id         text not null,
   vendedor_nombre     text,
   estado              text not null default 'pendiente'
-                        check (estado in ('pendiente', 'tomado', 'finalizado', 'cancelado')),
-  modo_atencion       text check (modo_atencion in ('separar', 'confirmar')),
+                        check (estado in ('pendiente', 'tomado', 'finalizado')),
+  tipo                text check (tipo in ('separar', 'confirmar')),
   items               jsonb not null default '[]'::jsonb,
-  foto_original       text,                        -- foto en base64 (puede ser grande)
-  -- columna calculada: evita tener que leer foto_original solo para saber
-  -- si existe, cuando se lista el pedido sin la foto (más liviano).
-  tiene_foto          boolean generated always as (foto_original is not null) stored,
+  foto                text,                        -- foto en base64 (puede ser grande)
+  -- columna calculada: evita tener que leer la foto solo para saber si
+  -- existe, cuando se lista el pedido sin la foto (más liviano).
+  tiene_foto          boolean generated always as (foto is not null) stored,
   creado_en           bigint not null,              -- epoch ms, igual que antes
   visto_por_vendedor  boolean not null default true,
   almacenero_id       text,
@@ -64,7 +64,4 @@ $$;
 -- Firebase se saltaba las reglas de Firestore. Por eso NO hace
 -- falta activar RLS ni escribir políticas — el control de acceso
 -- lo sigue haciendo el backend (Express), no Supabase.
--- Si en el futuro alguna parte del frontend llamara directo a
--- Supabase con la clave pública (anon key), ahí sí habría que
--- activar RLS y escribir políticas por tabla.
 -- ============================================================
