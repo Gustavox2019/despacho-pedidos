@@ -276,3 +276,25 @@ body { background:#12151b; }
   }
   ::-webkit-scrollbar{ width:6px; height:6px; }
   ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
+
+  /* --- Galería de varias fotos (crear pedido y detalle) --- */
+  .fotos-gallery{ display:flex; flex-wrap:wrap; gap:10px; }
+  .foto-tile{
+    position:relative; width:90px; height:90px; border-radius:10px; overflow:hidden;
+    border:1px solid var(--border); background:var(--surface2); flex-shrink:0;
+  }
+  .foto-tile img{ width:100%; height:100%; object-fit:cover; cursor:pointer; display:block; }
+  .foto-tile-loading{
+    width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:var(--muted);
+  }
+  .foto-tile-del{
+    position:absolute; top:3px; right:3px; width:20px; height:20px; border-radius:50%;
+    background:rgba(18,21,27,0.85); border:1px solid var(--border); color:var(--text);
+    display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0;
+  }
+  .foto-tile-del:hover{ background:var(--red-dim); border-color:var(--red); color:var(--red); }
+  .foto-tile-add{
+    display:flex; align-items:center; justify-content:center; border:2px dashed var(--border);
+    color:var(--muted); cursor:pointer; transition:border-color .15s;
+  }
+  .foto-tile-add:hover{ border-color:var(--teal); color:var(--text); }

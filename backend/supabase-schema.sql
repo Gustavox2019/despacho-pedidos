@@ -65,3 +65,26 @@ $$;
 -- falta activar RLS ni escribir políticas — el control de acceso
 -- lo sigue haciendo el backend (Express), no Supabase.
 -- ============================================================
+
+-- ============================================================
+-- MIGRACIÓN: soporte para varias fotos por pedido
+-- ============================================================
+-- Antes cada pedido tenía una sola foto (columna "foto", texto).
+-- Ahora un pedido puede tener varias, guardadas en la columna
+-- nueva "fotos" (una lista en formato JSON: [{ "id": "...", "src": "..." }]).
+--
+-- Cómo usarlo: en tu proyecto de Supabase, ve a "SQL Editor" →
+-- "New query", pega SOLO este bloque (puedes pegarlo también junto
+-- con todo el archivo, es seguro volver a correrlo) y dale "Run".
+-- La columna "foto" antigua NO se borra, así que los pedidos que
+-- ya existían siguen mostrando su foto de siempre.
+
+alter table pedidos add column if not exists fotos jsonb not null default '[]'::jsonb;
+
+-- La columna calculada "tiene_foto" ahora debe considerar tanto la
+-- foto antigua como el arreglo nuevo. Como es una columna generada,
+-- hay que borrarla y volver a crearla (no se puede solo "alterar").
+alter table pedidos drop column if exists tiene_foto;
+alter table pedidos add column tiene_foto boolean generated always as (
+  (foto is not null) or (jsonb_array_length(fotos) > 0)
+) stored;

@@ -12,7 +12,7 @@ const CAMPOS_PEDIDO = {
   estado: "estado",
   tipo: "tipo",
   items: "items",
-  foto: "foto",
+  fotos: "fotos",
   creadoEn: "creado_en",
   vistoPorVendedor: "visto_por_vendedor",
   almaceneroId: "almacenero_id",
@@ -42,6 +42,14 @@ function aPedido(fila) {
   for (const [clave, columna] of Object.entries(CAMPOS_PEDIDO)) {
     pedido[clave] = fila[columna];
   }
+  // Compatibilidad con pedidos creados antes de este cambio, cuando
+  // solo existía una foto (columna "foto", texto único) en vez del
+  // arreglo "fotos". Si el pedido no tiene fotos nuevas pero sí tiene
+  // la foto antigua, se muestra igual como la primera foto del arreglo.
+  if ((!pedido.fotos || pedido.fotos.length === 0) && "foto" in fila && fila.foto) {
+    pedido.fotos = [{ id: "foto-legado", src: fila.foto }];
+  }
+  if (!pedido.fotos) pedido.fotos = [];
   if ("tiene_foto" in fila) pedido.tieneFoto = fila.tiene_foto;
   return pedido;
 }
@@ -58,7 +66,7 @@ async function generarSiguienteId() {
 // Crear un pedido nuevo (vendedor)
 router.post("/", async (req, res) => {
   try {
-    const { cliente, vendedorId, vendedorNombre, items, foto, tipo } = req.body;
+    const { cliente, vendedorId, vendedorNombre, items, fotos, tipo } = req.body;
     if (!cliente || !vendedorId || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Faltan datos del pedido." });
     }
@@ -78,10 +86,15 @@ router.post("/", async (req, res) => {
         cantidad: Number(it.cantidad) || 1,
         codigo: (it.codigo || "").trim(),
         piso: it.piso || "",
+        // referencia a la foto de la que salió este código (para poder
+        // borrar sus líneas si el vendedor quita esa foto); null si vino
+        // de Excel o se agregó a mano.
+        fotoId: it.fotoId || null,
         check: null,
         texto: ""
       })),
-      foto: foto || null,
+      // arreglo de fotos: [{ id, src }, ...] — antes era una sola "foto"
+      fotos: Array.isArray(fotos) ? fotos.filter(f => f && f.src) : [],
       creadoEn: Date.now(),
       vistoPorVendedor: true
     };

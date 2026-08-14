@@ -1,14 +1,16 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
-import { Camera, Upload, Loader2, AlertTriangle, ClipboardList, Plus, Trash2, Layers, FileSpreadsheet, Clipboard, BadgeCheck } from "lucide-react";
+import { Camera, Upload, Loader2, AlertTriangle, ClipboardList, Plus, Trash2, Layers, FileSpreadsheet, Clipboard, BadgeCheck, X } from "lucide-react";
 import { resizeImageToBase64, uid } from "../helpers.js";
 import { parsearExcel } from "../excelParser.js";
 import { api } from "../api.js";
 
 export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
   const [cliente, setCliente] = useState("");
-  const [imgPreview, setImgPreview] = useState(null);
-  const [fotoGuardada, setFotoGuardada] = useState(null); // versión liviana que sí se guarda en el pedido
-  const [verFotoCompleta, setVerFotoCompleta] = useState(false);
+  // Cada foto: { id, preview (para mostrarla), guardada (versión liviana
+  // que se manda al backend), cargando }. Los items generados a partir de
+  // una foto llevan ese mismo id en "fotoId", para poder borrarlos juntos.
+  const [fotos, setFotos] = useState([]);
+  const [fotoAmpliada, setFotoAmpliada] = useState(null);
   const [analizando, setAnalizando] = useState(false);
   const [errorOcr, setErrorOcr] = useState("");
   const [items, setItems] = useState([]);
@@ -20,25 +22,50 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
   const clienteRef = useRef(cliente);
   clienteRef.current = cliente;
 
-  const procesarImagen = useCallback(async (file) => {
+  // Procesa una sola foto: la agrega a la galería, la sube a la IA para
+  // transcribirla, y agrega los códigos que salgan marcados con esa foto.
+  const agregarFoto = useCallback(async (file) => {
     if (!file) return;
+    const fotoId = uid("foto");
+    setFotos(prev => [...prev, { id: fotoId, preview: null, guardada: null, cargando: true }]);
+    try {
+      const b64 = await resizeImageToBase64(file, 1600);
+      const preview = "data:image/jpeg;base64," + b64;
+      // versión más liviana, es la que se guarda en el pedido (para no pasar el límite de la base de datos)
+      const b64Guardado = await resizeImageToBase64(file, 900, 0.6);
+      const guardada = "data:image/jpeg;base64," + b64Guardado;
+      setFotos(prev => prev.map(f => f.id === fotoId ? { ...f, preview, guardada, cargando: false } : f));
+      const parsed = await api.transcribir(b64, "image/jpeg");
+      if (parsed.cliente && !clienteRef.current) setCliente(parsed.cliente);
+      setItems(prev => [...prev, ...(parsed.items || []).map(it => ({ ...it, id: it.id || uid("it"), fotoId }))]);
+    } catch (err) {
+      setFotos(prev => prev.map(f => f.id === fotoId ? { ...f, cargando: false } : f));
+      setErrorOcr(err.message || "No se pudo leer una de las imágenes automáticamente. Puedes agregar las líneas manualmente abajo.");
+    }
+  }, []);
+
+  // Procesa varias fotos seguidas (selección múltiple, o varias pegadas).
+  const procesarImagenes = useCallback(async (fileList) => {
+    const files = Array.from(fileList || []).filter(f => f && f.type && f.type.startsWith("image/"));
+    if (files.length === 0) return;
     setErrorOcr("");
     setAnalizando(true);
     try {
-      const b64 = await resizeImageToBase64(file, 1600);
-      setImgPreview("data:image/jpeg;base64," + b64);
-      // versión más liviana, es la que se guarda en el pedido (para no pasar el límite de la base de datos)
-      const b64Guardado = await resizeImageToBase64(file, 900, 0.6);
-      setFotoGuardada("data:image/jpeg;base64," + b64Guardado);
-      const parsed = await api.transcribir(b64, "image/jpeg");
-      if (parsed.cliente && !clienteRef.current) setCliente(parsed.cliente);
-      setItems(prev => [...prev, ...(parsed.items || []).map(it => ({ ...it, id: it.id || uid("it") }))]);
-    } catch (err) {
-      setErrorOcr(err.message || "No se pudo leer la imagen automáticamente. Puedes agregar las líneas manualmente abajo.");
+      for (const file of files) {
+        // una por una, así cada foto aparece en la galería apenas se lee
+        await agregarFoto(file);
+      }
     } finally {
       setAnalizando(false);
     }
-  }, []);
+  }, [agregarFoto]);
+
+  // Quita una foto de la galería y, junto con ella, todos los códigos
+  // que se habían generado a partir de esa foto.
+  function eliminarFoto(fotoId) {
+    setFotos(prev => prev.filter(f => f.id !== fotoId));
+    setItems(prev => prev.filter(it => it.fotoId !== fotoId));
+  }
 
   async function procesarExcel(file) {
     if (!file) return;
@@ -59,26 +86,28 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
     }
   }
 
-  // Permite pegar una imagen copiada (Ctrl+V / Cmd+V), por ejemplo una
-  // captura de pantalla de Excel copiada directamente, sin guardarla primero.
+  // Permite pegar una o varias imágenes copiadas (Ctrl+V / Cmd+V), por
+  // ejemplo capturas de pantalla de Excel copiadas directamente, sin
+  // guardarlas primero.
   useEffect(() => {
     function alPegar(e) {
       const elementos = e.clipboardData?.items;
       if (!elementos) return;
+      const archivos = [];
       for (const el of elementos) {
         if (el.type.startsWith("image/")) {
           const file = el.getAsFile();
-          if (file) {
-            e.preventDefault();
-            procesarImagen(file);
-          }
-          break;
+          if (file) archivos.push(file);
         }
+      }
+      if (archivos.length > 0) {
+        e.preventDefault();
+        procesarImagenes(archivos);
       }
     }
     window.addEventListener("paste", alPegar);
     return () => window.removeEventListener("paste", alPegar);
-  }, [procesarImagen]);
+  }, [procesarImagenes]);
 
   function updateItem(id, patch) {
     setItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it));
@@ -123,18 +152,20 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
   async function handleEnviar() {
     setEnviando(true);
     try {
-      await onCreado({ cliente: cliente.trim(), items, foto: fotoGuardada, tipo });
+      const fotosListas = fotos.filter(f => !f.cargando && f.guardada).map(f => ({ id: f.id, src: f.guardada }));
+      await onCreado({ cliente: cliente.trim(), items, fotos: fotosListas, tipo });
     } finally {
       setEnviando(false);
     }
   }
 
-  const puedeEnviar = cliente.trim() && items.length > 0 && items.every(it => it.codigo.trim()) && !!tipo && !enviando;
+  const hayFotoCargando = fotos.some(f => f.cargando);
+  const puedeEnviar = cliente.trim() && items.length > 0 && items.every(it => it.codigo.trim()) && !!tipo && !enviando && !hayFotoCargando;
 
   return (
     <div className="container crear-pedido-container">
       <div className="page-title">Nuevo pedido</div>
-      <div className="page-sub">Sube la lista del cliente — foto, Excel, o pega una imagen — y revisa antes de enviar.</div>
+      <div className="page-sub">Sube la lista del cliente — foto(s), Excel, o pega una imagen — y revisa antes de enviar.</div>
 
       <div className="crear-grid">
         <div className="field cg-cliente">
@@ -144,7 +175,7 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
 
         <div className="field cg-media">
           <label>Lista del pedido</label>
-          {!imgPreview ? (
+          {fotos.length === 0 ? (
             <div className="upload-options">
               <div className="upload-opt-btn" onClick={() => fileRefCamara.current?.click()}>
                 <Camera size={22} />
@@ -161,28 +192,49 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
             </div>
           ) : (
             <>
-              <img src={imgPreview} className="upload-preview" alt="Lista subida" onClick={() => setVerFotoCompleta(true)} />
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div className="fotos-gallery">
+                {fotos.map(f => (
+                  <div className="foto-tile" key={f.id}>
+                    {f.cargando ? (
+                      <div className="foto-tile-loading"><Loader2 className="spin" size={18} /></div>
+                    ) : (
+                      <img src={f.preview} alt="Foto de la lista" onClick={() => setFotoAmpliada(f.preview)} />
+                    )}
+                    <button
+                      type="button"
+                      className="foto-tile-del"
+                      title="Quitar esta foto (y sus códigos)"
+                      onClick={() => eliminarFoto(f.id)}
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+                <div className="foto-tile foto-tile-add" onClick={() => fileRefGaleria.current?.click()} title="Agregar otra foto">
+                  <Plus size={22} />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
                 <button className="btn btn-outline btn-sm" onClick={() => fileRefCamara.current?.click()}>
                   <Camera size={13} /> Tomar otra foto
                 </button>
-                <button className="btn btn-outline btn-sm" onClick={() => fileRefGaleria.current?.click()}>
-                  <Upload size={13} /> Elegir otra
+                <button className="btn btn-outline btn-sm" onClick={() => fileRefExcel.current?.click()}>
+                  <FileSpreadsheet size={13} /> Agregar Excel
                 </button>
               </div>
             </>
           )}
           <div className="helper-text" style={{ marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-            <Clipboard size={12} /> También puedes pegar una imagen copiada con Ctrl+V
+            <Clipboard size={12} /> También puedes pegar una o varias imágenes copiadas con Ctrl+V
           </div>
           {/* capture="environment" abre la cámara directamente en celulares */}
           <input ref={fileRefCamara} type="file" accept="image/*" capture="environment" style={{ display: "none" }}
-            onChange={e => procesarImagen(e.target.files[0])} />
-          {/* sin "capture" para que el navegador muestre la galería/explorador de archivos */}
-          <input ref={fileRefGaleria} type="file" accept="image/*" style={{ display: "none" }}
-            onChange={e => procesarImagen(e.target.files[0])} />
+            onChange={e => { procesarImagenes(e.target.files); e.target.value = ""; }} />
+          {/* sin "capture", con "multiple", para elegir varias fotos de la galería a la vez */}
+          <input ref={fileRefGaleria} type="file" accept="image/*" multiple style={{ display: "none" }}
+            onChange={e => { procesarImagenes(e.target.files); e.target.value = ""; }} />
           <input ref={fileRefExcel} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
-            onChange={e => procesarExcel(e.target.files[0])} />
+            onChange={e => { procesarExcel(e.target.files[0]); e.target.value = ""; }} />
         </div>
 
         <div className="cg-status">
@@ -292,10 +344,10 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
         </div>
       </div>
 
-      {verFotoCompleta && imgPreview && (
-        <div className="lightbox-overlay" onClick={() => setVerFotoCompleta(false)}>
-          <button className="lightbox-close" onClick={() => setVerFotoCompleta(false)}>✕</button>
-          <img src={imgPreview} alt="Lista en tamaño completo" />
+      {fotoAmpliada && (
+        <div className="lightbox-overlay" onClick={() => setFotoAmpliada(null)}>
+          <button className="lightbox-close" onClick={() => setFotoAmpliada(null)}>✕</button>
+          <img src={fotoAmpliada} alt="Lista en tamaño completo" />
         </div>
       )}
     </div>

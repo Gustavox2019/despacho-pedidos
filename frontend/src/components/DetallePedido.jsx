@@ -18,7 +18,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   const [nuevaCantidad, setNuevaCantidad] = useState(1);
   const [nuevoCodigo, setNuevoCodigo] = useState("");
   const [agregando, setAgregando] = useState(false);
-  const [verFoto, setVerFoto] = useState(false);
+  const [fotoAmpliada, setFotoAmpliada] = useState(null);
   const pedidoRef = useRef(null);
 
   const cargar = useCallback(async () => {
@@ -63,7 +63,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     if (!nuevoCodigo.trim()) return;
     setAgregando(true);
     try {
-      const nuevoItem = { id: uid("it"), cantidad: Number(nuevaCantidad) || 1, codigo: nuevoCodigo.trim(), piso: "", check: null, texto: "" };
+      const nuevoItem = { id: uid("it"), cantidad: Number(nuevaCantidad) || 1, codigo: nuevoCodigo.trim(), piso: "", fotoId: null, check: null, texto: "" };
       const nuevosItems = [...pedido.items, nuevoItem];
       const actualizado = await api.actualizarPedido(pedidoId, { items: nuevosItems });
       pedidoRef.current = actualizado;
@@ -146,12 +146,15 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   }
 
   const yoLoTome = pedido.almaceneroId === user.id;
-  const puedeMarcar = pedido.estado === "tomado" && yoLoTome && pedido.tipo === "separar";
-  const puedeConfirmar = pedido.estado === "tomado" && yoLoTome && pedido.tipo === "confirmar";
+  // Ahora el checklist línea por línea aplica a los dos tipos de pedido:
+  // en "separar" además se piden las cajas; en "confirmar" basta con
+  // marcar cada código para poder confirmar el pedido.
+  const puedeMarcar = pedido.estado === "tomado" && yoLoTome;
   const puedeAgregarProducto = pedido.estado !== "finalizado";
   const todosMarcados = pedido.items.every(it => it.check === "ok" || it.check === "no");
   const cajasValidas = Number(cajasInput) > 0;
-  const puedeFinalizar = puedeMarcar && todosMarcados && cajasValidas;
+  const puedeFinalizarSeparar = puedeMarcar && pedido.tipo === "separar" && todosMarcados && cajasValidas;
+  const puedeFinalizarConfirmar = puedeMarcar && pedido.tipo === "confirmar" && todosMarcados;
 
   const linkWhatsapp = NUMERO_WHATSAPP
     ? `https://wa.me/${NUMERO_WHATSAPP}?text=${encodeURIComponent(`Tengo un problema con el pedido ${pedido.id}`)}`
@@ -185,12 +188,16 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         </div>
       )}
 
-      {pedido.foto && (
+      {pedido.fotos && pedido.fotos.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 800, marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
-            <ImageIcon size={12} /> Foto original de la lista
+            <ImageIcon size={12} /> {pedido.fotos.length > 1 ? "Fotos originales de la lista" : "Foto original de la lista"}
           </div>
-          <img src={pedido.foto} className="foto-thumb" alt="Foto original de la lista" onClick={() => setVerFoto(true)} />
+          <div className="fotos-gallery">
+            {pedido.fotos.map(f => (
+              <img key={f.id} src={f.src} className="foto-thumb" alt="Foto original de la lista" onClick={() => setFotoAmpliada(f.src)} />
+            ))}
+          </div>
         </div>
       )}
 
@@ -304,7 +311,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         </div>
       )}
 
-      {puedeMarcar && (
+      {puedeMarcar && pedido.tipo === "separar" && (
         <div className="card" style={{ marginTop: 18 }}>
           <div className="field" style={{ marginBottom: 10 }}>
             <label><Boxes size={12} style={{ verticalAlign: -2 }} /> Cantidad de cajas del pedido</label>
@@ -315,18 +322,23 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
               Marca check o equis en todos los códigos para poder finalizar.
             </div>
           )}
-          <button className="btn btn-primary btn-block" disabled={!puedeFinalizar || guardando} onClick={finalizarSeparado}>
+          <button className="btn btn-primary btn-block" disabled={!puedeFinalizarSeparar || guardando} onClick={finalizarSeparado}>
             {guardando ? <Loader2 className="spin" size={15} /> : "Finalizar pedido"}
           </button>
         </div>
       )}
 
-      {puedeConfirmar && (
+      {puedeMarcar && pedido.tipo === "confirmar" && (
         <div className="card" style={{ marginTop: 18 }}>
           <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 10 }}>
-            Confirma que hay stock disponible para este pedido (sin armar cajas).
+            Marca cada código y confirma que hay stock disponible para este pedido (sin armar cajas).
           </div>
-          <button className="btn btn-primary btn-block" disabled={guardando} onClick={confirmarPedido}>
+          {!todosMarcados && (
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 10 }}>
+              Marca check o equis en todos los códigos para poder confirmar.
+            </div>
+          )}
+          <button className="btn btn-primary btn-block" disabled={!puedeFinalizarConfirmar || guardando} onClick={confirmarPedido}>
             {guardando ? <Loader2 className="spin" size={15} /> : "Confirmar pedido"}
           </button>
         </div>
@@ -353,10 +365,10 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         <button className="btn btn-outline" onClick={onVolver}><ChevronLeft size={14} /> Volver</button>
       </div>
 
-      {verFoto && (
-        <div className="lightbox-overlay" onClick={() => setVerFoto(false)}>
-          <button className="lightbox-close" onClick={() => setVerFoto(false)}>✕</button>
-          <img src={pedido.foto} alt="Foto original en tamaño completo" />
+      {fotoAmpliada && (
+        <div className="lightbox-overlay" onClick={() => setFotoAmpliada(null)}>
+          <button className="lightbox-close" onClick={() => setFotoAmpliada(null)}>✕</button>
+          <img src={fotoAmpliada} alt="Foto original en tamaño completo" />
         </div>
       )}
     </div>
