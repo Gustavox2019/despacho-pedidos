@@ -3,7 +3,7 @@ import { Loader2, Plus, FileSpreadsheet, FileText, BarChart3 } from "lucide-reac
 import "./styles.css";
 import { api } from "./api.js";
 import { exportarReporteCSV, exportarReporteXLSX } from "./reporte.js";
-import { notificar, pedirPermiso, permisoActual, desbloquearSonido } from "./notifications.js";
+import { notificar, pedirPermiso, permisoActual, desbloquearSonido, inicializarServiceWorker } from "./notifications.js";
 import LoginScreen from "./components/LoginScreen.jsx";
 import TopBar from "./components/TopBar.jsx";
 import ListaPedidos from "./components/ListaPedidos.jsx";
@@ -99,6 +99,7 @@ export default function App() {
     }
     setCargandoSesion(false);
     setNotifPermiso(permisoActual());
+    inicializarServiceWorker(); // listo de antemano, así la primera notificación no se demora
   }, []);
 
   async function activarNotificaciones() {
