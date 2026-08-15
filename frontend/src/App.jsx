@@ -3,7 +3,7 @@ import { Loader2, Plus, FileSpreadsheet, FileText, BarChart3 } from "lucide-reac
 import "./styles.css";
 import { api } from "./api.js";
 import { exportarReporteCSV, exportarReporteXLSX } from "./reporte.js";
-import { notificar, pedirPermiso, permisoActual } from "./notifications.js";
+import { notificar, pedirPermiso, permisoActual, desbloquearSonido } from "./notifications.js";
 import LoginScreen from "./components/LoginScreen.jsx";
 import TopBar from "./components/TopBar.jsx";
 import ListaPedidos from "./components/ListaPedidos.jsx";
@@ -108,19 +108,40 @@ export default function App() {
 
   const cargarPedidos = useCallback(async () => {
     try {
-      const lista = await api.listarPedidos();
+      // Un vendedor solo debe recibir SUS propios pedidos — se filtra ya
+      // en el backend, no solo se esconde en la pantalla, para que ni
+      // siquiera le lleguen al navegador los pedidos de otros vendedores.
+      const vendedorId = user?.rol === "vendedor" ? user.id : undefined;
+      const lista = await api.listarPedidos(vendedorId);
 
       // Comparamos contra el snapshot anterior para avisar solo de lo que
-      // cambió recién (pedido nuevo, mensaje nuevo) — nunca de todo lo que
-      // ya existía la primera vez que se carga la lista.
+      // cambió recién (pedido nuevo, mensaje nuevo, cambio de estado) —
+      // nunca de todo lo que ya existía la primera vez que se carga la lista.
       if (user && !primerCargaRef.current) {
         const anteriores = pedidosAnterioresRef.current;
         for (const p of lista) {
           const antes = anteriores.get(p.id);
 
-          // Pedido nuevo (recién llegado, sin abrir) — solo le importa al almacén.
-          if (user.rol === "almacenero" && !antes && p.estado === "pendiente" && !p.vistoPorAlmacen) {
-            notificar("Nuevo pedido", { body: `${p.cliente} · ${p.items.length} código(s)`, tag: `pedido-${p.id}` });
+          // Almacén: pedido nuevo, o un pedido que "volvió" a pendiente
+          // (alguien lo liberó, o el vendedor lo reenvió para separar).
+          if (user.rol === "almacenero" && p.estado === "pendiente" && !p.vistoPorAlmacen) {
+            const esNuevo = !antes;
+            const volvioAPendiente = antes && antes.estado !== "pendiente";
+            if (esNuevo || volvioAPendiente) {
+              notificar("Nuevo pedido", { body: `${p.cliente} · ${p.items.length} código(s)`, tag: `pedido-${p.id}-${p.tomadoEn || p.creadoEn}` });
+            }
+          }
+
+          // Vendedor: su propio pedido cambió de estado (lo tomaron, lo
+          // finalizaron/confirmaron, lo cancelaron, o volvió a pendiente).
+          if (user.rol === "vendedor" && antes && antes.estado !== p.estado && p.vendedorId === user.id) {
+            const textos = {
+              tomado: "Tu pedido está en proceso.",
+              finalizado: p.tipo === "confirmar" ? "Tu pedido fue confirmado." : `Tu pedido fue finalizado · ${p.cajas || 0} caja(s).`,
+              cancelado: "Tu pedido fue cancelado.",
+              pendiente: "Tu pedido volvió a quedar pendiente."
+            };
+            notificar(`Pedido ${p.id}`, { body: textos[p.estado] || `${p.cliente} cambió de estado.`, tag: `estado-${p.id}-${p.estado}` });
           }
 
           // Mensaje de chat nuevo, de la otra persona (no de uno mismo).
@@ -129,7 +150,7 @@ export default function App() {
             const antesVistoAlmacen = antes ? antes.chatVistoAlmacen : true;
             const yaEraNoVisto = user.rol === "vendedor" ? !antesVistoVendedor : !antesVistoAlmacen;
             const ahoraNoVisto = user.rol === "vendedor" ? !p.chatVistoVendedor : !p.chatVistoAlmacen;
-            const meAplica = user.rol === "vendedor" ? p.vendedorId === user.id : true;
+            const meAplica = user.rol === "vendedor" ? p.vendedorId === user.id : p.almaceneroId === user.id;
             if (meAplica && ahoraNoVisto && (!antes || !yaEraNoVisto)) {
               notificar("Nuevo mensaje", { body: `Pedido ${p.id} · ${p.cliente}`, tag: `chat-${p.id}-${p.ultimoMensajeEn}` });
             }
@@ -155,6 +176,7 @@ export default function App() {
   function handleLogin(u) {
     setUser(u);
     localStorage.setItem(SESION_KEY, JSON.stringify(u));
+    desbloquearSonido(); // el login es el primer "click" real, aprovechamos para habilitar el audio
   }
   function handleLogout() {
     setUser(null);
@@ -201,7 +223,7 @@ export default function App() {
     : 0;
   const notifChatCount = pedidos.filter(p => user.rol === "vendedor"
     ? (p.vendedorId === user.id && !p.chatVistoVendedor)
-    : !p.chatVistoAlmacen
+    : (p.almaceneroId === user.id && !p.chatVistoAlmacen)
   ).length;
 
   return (

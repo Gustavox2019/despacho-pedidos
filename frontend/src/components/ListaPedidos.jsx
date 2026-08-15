@@ -96,19 +96,20 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
 
   return (
     <div>
-      <div className="tabs">
-        <button className={`tab-btn ${tab === "mis-pedidos" ? "active" : ""}`} onClick={() => setTab("mis-pedidos")}>Mis pedidos</button>
-        <button className={`tab-btn ${tab === "pendientes" ? "active" : ""}`} onClick={() => setTab("pendientes")}>Pendientes</button>
-        <button className={`tab-btn ${tab === "mis-tomados" ? "active" : ""}`} onClick={() => setTab("mis-tomados")}>Tomados por mí</button>
-        <button className={`tab-btn ${tab === "todos" ? "active" : ""}`} onClick={() => setTab("todos")}>Todos</button>
-      </div>
+      {user.rol !== "vendedor" && (
+        <div className="tabs">
+          <button className={`tab-btn ${tab === "pendientes" ? "active" : ""}`} onClick={() => setTab("pendientes")}>Pendientes</button>
+          <button className={`tab-btn ${tab === "mis-tomados" ? "active" : ""}`} onClick={() => setTab("mis-tomados")}>Tomados por mí</button>
+          <button className={`tab-btn ${tab === "todos" ? "active" : ""}`} onClick={() => setTab("todos")}>Todos</button>
+        </div>
+      )}
 
       <FiltrosPedidos
         pedidos={pedidos}
         filtros={filtros}
         setFiltros={setFiltros}
         mostrarFecha={mostrarFecha}
-        mostrarFiltroVendedor={tab !== "mis-pedidos"}
+        mostrarFiltroVendedor={user.rol !== "vendedor" && tab !== "mis-pedidos"}
         mostrarFiltroAlmacenero={mostrarFiltroAlmacenero}
       />
 
@@ -123,7 +124,7 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
         filtrados.map(p => {
           const notifFinalizado = p.vendedorId === user.id && p.estado === "finalizado" && !p.vistoPorVendedor;
           const notifPedidoNuevo = user.rol === "almacenero" && p.estado === "pendiente" && !p.vistoPorAlmacen;
-          const notifChat = user.rol === "vendedor" ? (p.vendedorId === user.id && !p.chatVistoVendedor) : !p.chatVistoAlmacen;
+          const notifChat = user.rol === "vendedor" ? (p.vendedorId === user.id && !p.chatVistoVendedor) : (p.almaceneroId === user.id && !p.chatVistoAlmacen);
           const progreso = calcularProgreso(p);
           return (
             <div className={`pedido-row ${p.anclado ? "anclado" : ""}`} key={p.id} onClick={() => onOpen(p.id)}>
@@ -143,7 +144,7 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
                   {p.estado === "finalizado" && p.finalizadoEn && ` · Finalizado ${fmtTime(p.finalizadoEn)}`}
                   {p.estado === "cancelado" && p.canceladoEn && ` · Cancelado ${fmtTime(p.canceladoEn)}`}
                   {p.historial && p.historial.length > 0 && (
-                    <span style={{ color: "var(--amber)" }}> · editado</span>
+                    <span style={{ color: "var(--amber)" }}> · con historial</span>
                   )}
                   {notifChat && <span className="chat-unread-dot"> · ● mensaje nuevo</span>}
                 </div>

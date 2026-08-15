@@ -17,7 +17,7 @@ export const api = {
   listarPedidos: (vendedorId) => request("/pedidos" + (vendedorId ? `?vendedorId=${encodeURIComponent(vendedorId)}` : "")),
   obtenerPedido: (id) => request(`/pedidos/${id}`),
   actualizarPedido: (id, patch) => request(`/pedidos/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
-  listarChat: (pedidoId) => request(`/chat/${pedidoId}`),
+  listarChat: (pedidoId, solicitanteId) => request(`/chat/${pedidoId}?solicitanteId=${encodeURIComponent(solicitanteId)}`),
   enviarChat: (pedidoId, msg) => request(`/chat/${pedidoId}`, { method: "POST", body: JSON.stringify(msg) }),
   transcribir: (imageBase64, mediaType) => request("/ocr", { method: "POST", body: JSON.stringify({ imageBase64, mediaType }) }),
   matchLista: (items) => request("/match", { method: "POST", body: JSON.stringify({ items }) }),

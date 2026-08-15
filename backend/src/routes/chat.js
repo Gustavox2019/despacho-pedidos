@@ -3,8 +3,25 @@ import { supabase } from "../supabase.js";
 
 const router = Router();
 
+// Solo pueden ver/usar el chat de un pedido: el vendedor que lo creó, y
+// (si ya lo tomó alguien) el almacenero que lo tomó. Nadie más — así el
+// chat no se llena de gente ajena al pedido.
+async function tieneAcceso(pedidoId, solicitanteId) {
+  if (!solicitanteId) return false;
+  const { data, error } = await supabase
+    .from("pedidos")
+    .select("vendedor_id, almacenero_id")
+    .eq("id", pedidoId)
+    .maybeSingle();
+  if (error || !data) return false;
+  return data.vendedor_id === solicitanteId || data.almacenero_id === solicitanteId;
+}
+
 router.get("/:pedidoId", async (req, res) => {
   try {
+    const permitido = await tieneAcceso(req.params.pedidoId, req.query.solicitanteId);
+    if (!permitido) return res.status(403).json({ error: "No tienes acceso al chat de este pedido." });
+
     const { data, error } = await supabase
       .from("chats")
       .select("mensajes")
@@ -20,8 +37,11 @@ router.get("/:pedidoId", async (req, res) => {
 
 router.post("/:pedidoId", async (req, res) => {
   try {
-    const { autor, rol, texto } = req.body;
+    const { autor, rol, texto, solicitanteId } = req.body;
     if (!texto || !texto.trim()) return res.status(400).json({ error: "Mensaje vacío." });
+
+    const permitido = await tieneAcceso(req.params.pedidoId, solicitanteId);
+    if (!permitido) return res.status(403).json({ error: "No tienes acceso al chat de este pedido." });
 
     const { data: existente, error: errLectura } = await supabase
       .from("chats")

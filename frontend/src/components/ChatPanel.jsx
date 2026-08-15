@@ -10,11 +10,11 @@ export default function ChatPanel({ pedidoId, user }) {
 
   const cargar = useCallback(async () => {
     try {
-      const msgs = await api.listarChat(pedidoId);
+      const msgs = await api.listarChat(pedidoId, user.id);
       setMensajes(msgs);
     } catch (e) { /* silencioso, se reintenta en el siguiente poll */ }
     setCargado(true);
-  }, [pedidoId]);
+  }, [pedidoId, user.id]);
 
   useEffect(() => {
     cargar();
@@ -27,7 +27,7 @@ export default function ChatPanel({ pedidoId, user }) {
     if (!t) return;
     setTexto("");
     try {
-      const actualizados = await api.enviarChat(pedidoId, { autor: user.nombre, rol: user.rol, texto: t });
+      const actualizados = await api.enviarChat(pedidoId, { autor: user.nombre, rol: user.rol, texto: t, solicitanteId: user.id });
       setMensajes(actualizados);
     } catch (e) { /* si falla, se vuelve a cargar en el próximo poll */ }
   }

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, CheckCheck, ClipboardList, CheckCircle2, XCircle,
   Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus, Image as ImageIcon, Layers,
-  History, Pin, Ban
+  History, Pin, Ban, Undo2
 } from "lucide-react";
 import { fmtTime, fmtFechaHora, uid, calcularProgreso } from "../helpers.js";
 import { api } from "../api.js";
@@ -60,7 +60,8 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
       const cambios = {};
       if (user.rol === "almacenero" && !pedido.vistoPorAlmacen) cambios.vistoPorAlmacen = true;
       if (user.rol === "vendedor" && pedido.vendedorId === user.id && !pedido.chatVistoVendedor) cambios.chatVistoVendedor = true;
-      if (user.rol === "almacenero" && !pedido.chatVistoAlmacen) cambios.chatVistoAlmacen = true;
+      // Solo el almacenero que YA tomó este pedido puede leer su chat.
+      if (user.rol === "almacenero" && pedido.almaceneroId === user.id && !pedido.chatVistoAlmacen) cambios.chatVistoAlmacen = true;
       if (Object.keys(cambios).length === 0) return;
       const actualizado = await api.actualizarPedido(pedidoId, cambios);
       pedidoRef.current = actualizado;
@@ -179,6 +180,33 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         cajas: null,
         finalizadoEn: null,
         vistoPorVendedor: true
+      });
+      pedidoRef.current = actualizado;
+      setPedido(actualizado);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  // El almacenero que tomó el pedido puede "liberarlo" — vuelve a la
+  // bandeja de pendientes por si no lo puede terminar, sin borrar nada;
+  // queda anotado en el historial quién lo liberó y cuándo.
+  async function liberarPedido() {
+    const ok = window.confirm("Esto libera el pedido — vuelve a quedar pendiente para que cualquiera lo tome. ¿Continuar?");
+    if (!ok) return;
+    setGuardando(true);
+    try {
+      const entrada = {
+        id: uid("h"), ts: Date.now(), autor: user.nombre,
+        descripcion: `Liberó el pedido (lo tenía tomado desde ${fmtFechaHora(pedido.tomadoEn)})`
+      };
+      const actualizado = await api.actualizarPedido(pedidoId, {
+        estado: "pendiente",
+        almaceneroId: null,
+        almaceneroNombre: null,
+        tomadoEn: null,
+        vistoPorAlmacen: false, // así el resto del almacén se entera de que quedó libre otra vez
+        historial: [...(pedido.historial || []), entrada]
       });
       pedidoRef.current = actualizado;
       setPedido(actualizado);
@@ -349,7 +377,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
       {pedido.historial && pedido.historial.length > 0 && (
         <div className="card" style={{ marginBottom: 16, borderColor: "var(--amber-dim)" }}>
           <div className="section-label" style={{ marginTop: 0, color: "var(--amber)" }}>
-            <History size={13} /> Editado después de finalizar
+            <History size={13} /> Historial de cambios
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {pedido.historial.slice().reverse().map(h => (
@@ -368,6 +396,17 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
             disabled={guardando} onClick={cancelarPedido}>
             <Ban size={13} /> Cancelar pedido
           </button>
+        </div>
+      )}
+
+      {yoLoTome && pedido.estado === "tomado" && (
+        <div style={{ marginBottom: 16 }}>
+          <button className="btn btn-outline btn-sm" disabled={guardando} onClick={liberarPedido}>
+            <Undo2 size={13} /> Liberar pedido
+          </button>
+          <div className="helper-text" style={{ marginTop: 6, textAlign: "left" }}>
+            Vuelve a quedar pendiente para que cualquiera del almacén lo tome — queda registrado en el historial.
+          </div>
         </div>
       )}
 
@@ -502,8 +541,16 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         </div>
       )}
 
-      <div className="section-label"><MessageSquare size={13} /> Chat del pedido</div>
-      <ChatPanel pedidoId={pedido.id} user={user} />
+      {(pedido.vendedorId === user.id || pedido.almaceneroId === user.id) ? (
+        <>
+          <div className="section-label"><MessageSquare size={13} /> Chat del pedido</div>
+          <ChatPanel pedidoId={pedido.id} user={user} />
+        </>
+      ) : (
+        <div className="helper-text" style={{ marginTop: 20 }}>
+          El chat de este pedido solo lo pueden usar el vendedor y quien lo tome del almacén.
+        </div>
+      )}
 
       <div style={{ marginTop: 22 }}>
         <button className="btn btn-outline" onClick={onVolver}><ChevronLeft size={14} /> Volver</button>
