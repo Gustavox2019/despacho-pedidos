@@ -108,3 +108,20 @@ alter table pedidos add column if not exists historial jsonb not null default '[
 -- Pedidos anclados (fijados arriba de la lista, para todos)
 alter table pedidos add column if not exists anclado boolean not null default false;
 create index if not exists idx_pedidos_anclado on pedidos (anclado desc, creado_en desc);
+
+-- ============================================================
+-- MIGRACIÓN: notificaciones (pedido nuevo, mensajes de chat nuevos)
+-- ============================================================
+-- Igual que los bloques anteriores: pégalo en el SQL Editor de Supabase
+-- y dale "Run". Seguro de volver a correr.
+
+-- El almacén ve un aviso de "pedido nuevo" hasta que alguien lo abre.
+alter table pedidos add column if not exists visto_por_almacen boolean not null default false;
+-- Los pedidos que ya existían no necesitan mostrar el aviso retroactivo.
+update pedidos set visto_por_almacen = true where visto_por_almacen = false and estado <> 'pendiente';
+
+-- Quién mandó el último mensaje de chat, y si cada lado ya lo vio.
+alter table pedidos add column if not exists ultimo_mensaje_en bigint;
+alter table pedidos add column if not exists ultimo_mensaje_autor_rol text;
+alter table pedidos add column if not exists chat_visto_vendedor boolean not null default true;
+alter table pedidos add column if not exists chat_visto_almacen boolean not null default true;

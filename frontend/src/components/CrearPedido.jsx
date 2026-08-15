@@ -3,6 +3,7 @@ import { Camera, Upload, Loader2, AlertTriangle, ClipboardList, Plus, Trash2, La
 import { resizeImageToBase64, uid } from "../helpers.js";
 import { parsearExcel } from "../excelParser.js";
 import { api } from "../api.js";
+import CodigoInput from "./CodigoInput.jsx";
 
 export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
   const [cliente, setCliente] = useState("");
@@ -294,8 +295,8 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
                               onChange={e => updateItem(it.id, { cantidad: e.target.value })} />
                           </td>
                           <td>
-                            <input type="text" className="code-chip" value={it.codigo}
-                              onChange={e => updateItem(it.id, { codigo: e.target.value, matchStatus: "manual" })} />
+                            <CodigoInput className="code-chip" value={it.codigo}
+                              onChange={v => updateItem(it.id, { codigo: v, matchStatus: "manual" })} />
                             <div className={`match-badge match-${it.matchStatus}`} style={{ marginTop: 3 }}>
                               {it.matchStatus === "exacto" && "✓ en catálogo"}
                               {it.matchStatus === "aproximado" && "⚠ corregido, verificar"}

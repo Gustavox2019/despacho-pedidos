@@ -15,6 +15,7 @@ const CAMPOS_PEDIDO = {
   fotos: "fotos",
   creadoEn: "creado_en",
   vistoPorVendedor: "visto_por_vendedor",
+  vistoPorAlmacen: "visto_por_almacen",
   almaceneroId: "almacenero_id",
   almaceneroNombre: "almacenero_nombre",
   tomadoEn: "tomado_en",
@@ -22,7 +23,11 @@ const CAMPOS_PEDIDO = {
   finalizadoEn: "finalizado_en",
   canceladoEn: "cancelado_en",
   historial: "historial",
-  anclado: "anclado"
+  anclado: "anclado",
+  ultimoMensajeEn: "ultimo_mensaje_en",
+  ultimoMensajeAutorRol: "ultimo_mensaje_autor_rol",
+  chatVistoVendedor: "chat_visto_vendedor",
+  chatVistoAlmacen: "chat_visto_almacen"
 };
 
 // camelCase (lo que manda el frontend) → snake_case (columnas de Postgres).
@@ -86,6 +91,9 @@ router.post("/", async (req, res) => {
       tipo, // ahora lo define el vendedor al crear el pedido, no el almacenero al tomarlo
       historial: [],
       anclado: false,
+      vistoPorAlmacen: false, // así el almacén ve el aviso de "pedido nuevo"
+      chatVistoVendedor: true,
+      chatVistoAlmacen: true,
       items: items.map((it, i) => ({
         id: it.id || `it-${i}`,
         cantidad: Number(it.cantidad) || 1,
@@ -129,9 +137,10 @@ router.get("/", async (req, res) => {
       .from("pedidos")
       .select(
         "id, cliente, vendedor_id, vendedor_nombre, estado, tipo, items, " +
-        "tiene_foto, creado_en, visto_por_vendedor, almacenero_id, " +
+        "tiene_foto, creado_en, visto_por_vendedor, visto_por_almacen, almacenero_id, " +
         "almacenero_nombre, tomado_en, cajas, finalizado_en, cancelado_en, " +
-        "historial, anclado"
+        "historial, anclado, ultimo_mensaje_en, ultimo_mensaje_autor_rol, " +
+        "chat_visto_vendedor, chat_visto_almacen"
       )
       .order("anclado", { ascending: false })
       .order("creado_en", { ascending: false });

@@ -8,6 +8,7 @@ import { fmtTime, fmtFechaHora, uid, calcularProgreso } from "../helpers.js";
 import { api } from "../api.js";
 import { descargarEtiquetas } from "../etiquetas.js";
 import ChatPanel from "./ChatPanel.jsx";
+import CodigoInput from "./CodigoInput.jsx";
 
 const NUMERO_WHATSAPP = import.meta.env.VITE_WHATSAPP_NUMBER;
 
@@ -48,6 +49,26 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pedido?.estado, pedido?.vistoPorVendedor]);
 
+  // Al abrir el pedido: si soy almacenero y es un pedido nuevo, se marca
+  // como visto (para que deje de salir el aviso de "pedido nuevo" en la
+  // lista). El chat también se marca como leído acá porque el ChatPanel
+  // siempre está visible dentro del detalle, no hay un paso extra de
+  // "abrir el chat".
+  useEffect(() => {
+    (async () => {
+      if (!pedido) return;
+      const cambios = {};
+      if (user.rol === "almacenero" && !pedido.vistoPorAlmacen) cambios.vistoPorAlmacen = true;
+      if (user.rol === "vendedor" && pedido.vendedorId === user.id && !pedido.chatVistoVendedor) cambios.chatVistoVendedor = true;
+      if (user.rol === "almacenero" && !pedido.chatVistoAlmacen) cambios.chatVistoAlmacen = true;
+      if (Object.keys(cambios).length === 0) return;
+      const actualizado = await api.actualizarPedido(pedidoId, cambios);
+      pedidoRef.current = actualizado;
+      setPedido(actualizado);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedido?.id, pedido?.vistoPorAlmacen, pedido?.chatVistoVendedor, pedido?.chatVistoAlmacen]);
+
   function guardarEnSegundoPlano(patch) {
     api.actualizarPedido(pedidoId, patch)
       .then(actualizado => { pedidoRef.current = actualizado; })
@@ -83,7 +104,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
       const nuevoItem = { id: uid("it"), cantidad: Number(nuevaCantidad) || 1, codigo: nuevoCodigo.trim(), piso: "", fotoId: null, check: null, texto: "" };
       const nuevosItems = [...pedido.items, nuevoItem];
       const patch = { items: nuevosItems };
-      if (puedeEditarFinalizado) {
+      if (debeRegistrarHistorial) {
         const entrada = {
           id: uid("h"), ts: Date.now(), autor: user.nombre,
           descripcion: `Agregó el código ${nuevoItem.codigo} (cant. ${nuevoItem.cantidad}) después de finalizar el pedido`
@@ -202,7 +223,17 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   // historial del pedido (ver updateItemCheck / agregarProducto).
   const puedeEditarFinalizado = pedido.estado === "finalizado" && yoLoTome;
   const puedeMarcar = puedeMarcarActivo || puedeEditarFinalizado;
-  const puedeAgregarProducto = (pedido.estado !== "finalizado" && pedido.estado !== "cancelado") || puedeEditarFinalizado;
+  // En un pedido "confirmar" (sin armado físico de cajas) el vendedor
+  // también puede agregar códigos que se le hayan quedado afuera, incluso
+  // después de que el almacén ya lo confirmó — no hay cajas que reabrir.
+  const puedeAgregarProductoVendedor = pedido.tipo === "confirmar" && pedido.vendedorId === user.id && pedido.estado !== "cancelado";
+  const puedeAgregarProducto =
+    ((pedido.estado !== "finalizado" && pedido.estado !== "cancelado") || puedeEditarFinalizado) ||
+    puedeAgregarProductoVendedor;
+  // Cualquier edición (agregar código, marcar check) hecha una vez que el
+  // pedido ya está finalizado queda anotada en el historial, sin importar
+  // si la hizo el almacenero que lo separó o el vendedor en uno "confirmar".
+  const debeRegistrarHistorial = pedido.estado === "finalizado";
   const puedeCancelar = pedido.vendedorId === user.id && (pedido.estado === "pendiente" || pedido.estado === "tomado");
   const todosMarcados = pedido.items.every(it => it.check === "ok" || it.check === "no");
   const cajasValidas = Number(cajasInput) > 0;
@@ -406,11 +437,16 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 800, marginBottom: 10 }}>
             Agregar producto a este pedido
           </div>
+          {pedido.estado === "finalizado" && (
+            <div className="helper-text" style={{ marginTop: -4, marginBottom: 10, textAlign: "left" }}>
+              Este pedido ya está confirmado — si agregas un código acá, queda anotado en el historial.
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             <input type="number" min="1" className="qty-input" style={{ width: 56 }} value={nuevaCantidad}
               onChange={e => setNuevaCantidad(e.target.value)} />
-            <input type="text" className="code-chip" placeholder="Código de producto" value={nuevoCodigo}
-              onChange={e => setNuevoCodigo(e.target.value)}
+            <CodigoInput className="code-chip" placeholder="Código de producto" value={nuevoCodigo}
+              onChange={v => setNuevoCodigo(v)}
               onKeyDown={e => e.key === "Enter" && agregarProducto()} />
             <button className="icon-btn" disabled={!nuevoCodigo.trim() || agregando} onClick={agregarProducto}>
               {agregando ? <Loader2 className="spin" size={15} /> : <Plus size={15} />}

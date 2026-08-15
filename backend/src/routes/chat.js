@@ -42,6 +42,17 @@ router.post("/:pedidoId", async (req, res) => {
       .upsert({ pedido_id: req.params.pedidoId, mensajes });
     if (errGuardar) throw errGuardar;
 
+    // Avisamos al pedido quién mandó el último mensaje, para que el lado
+    // que NO escribió vea la notificación de "mensaje nuevo" (el que sí
+    // escribió obviamente ya lo vio).
+    const marcaVisto = rol === "vendedor"
+      ? { chat_visto_almacen: false, chat_visto_vendedor: true }
+      : { chat_visto_vendedor: false, chat_visto_almacen: true };
+    await supabase
+      .from("pedidos")
+      .update({ ultimo_mensaje_en: nuevo.ts, ultimo_mensaje_autor_rol: rol, ...marcaVisto })
+      .eq("id", req.params.pedidoId);
+
     res.json(mensajes);
   } catch (err) {
     console.error(err);

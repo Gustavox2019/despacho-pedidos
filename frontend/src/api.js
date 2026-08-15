@@ -21,6 +21,7 @@ export const api = {
   enviarChat: (pedidoId, msg) => request(`/chat/${pedidoId}`, { method: "POST", body: JSON.stringify(msg) }),
   transcribir: (imageBase64, mediaType) => request("/ocr", { method: "POST", body: JSON.stringify({ imageBase64, mediaType }) }),
   matchLista: (items) => request("/match", { method: "POST", body: JSON.stringify({ items }) }),
+  buscarCodigos: (q) => request(`/codigos/buscar?q=${encodeURIComponent(q)}`),
   loginGoogle: (credential) => request("/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
   guardarRol: (payload) => request("/auth/rol", { method: "POST", body: JSON.stringify(payload) })
 };

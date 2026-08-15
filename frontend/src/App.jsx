@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Loader2, Plus, FileSpreadsheet, FileText, BarChart3 } from "lucide-react";
 import "./styles.css";
 import { api } from "./api.js";
 import { exportarReporteCSV, exportarReporteXLSX } from "./reporte.js";
+import { notificar, pedirPermiso, permisoActual } from "./notifications.js";
 import LoginScreen from "./components/LoginScreen.jsx";
 import TopBar from "./components/TopBar.jsx";
 import ListaPedidos from "./components/ListaPedidos.jsx";
@@ -87,6 +88,9 @@ export default function App() {
   const [pedidoActivoId, setPedidoActivoId] = useState(null);
   const [pedidos, setPedidos] = useState([]);
   const [cargandoPedidos, setCargandoPedidos] = useState(true);
+  const [notifPermiso, setNotifPermiso] = useState("default");
+  const pedidosAnterioresRef = useRef(new Map()); // id -> pedido, snapshot del poll anterior
+  const primerCargaRef = useRef(true); // no notificar de golpe todo lo que ya existía al entrar
 
   useEffect(() => {
     const guardada = localStorage.getItem(SESION_KEY);
@@ -94,22 +98,59 @@ export default function App() {
       try { setUser(JSON.parse(guardada)); } catch (e) { /* ignorar sesión corrupta */ }
     }
     setCargandoSesion(false);
+    setNotifPermiso(permisoActual());
   }, []);
+
+  async function activarNotificaciones() {
+    const resultado = await pedirPermiso();
+    setNotifPermiso(resultado);
+  }
 
   const cargarPedidos = useCallback(async () => {
     try {
       const lista = await api.listarPedidos();
+
+      // Comparamos contra el snapshot anterior para avisar solo de lo que
+      // cambió recién (pedido nuevo, mensaje nuevo) — nunca de todo lo que
+      // ya existía la primera vez que se carga la lista.
+      if (user && !primerCargaRef.current) {
+        const anteriores = pedidosAnterioresRef.current;
+        for (const p of lista) {
+          const antes = anteriores.get(p.id);
+
+          // Pedido nuevo (recién llegado, sin abrir) — solo le importa al almacén.
+          if (user.rol === "almacenero" && !antes && p.estado === "pendiente" && !p.vistoPorAlmacen) {
+            notificar("Nuevo pedido", { body: `${p.cliente} · ${p.items.length} código(s)`, tag: `pedido-${p.id}` });
+          }
+
+          // Mensaje de chat nuevo, de la otra persona (no de uno mismo).
+          if (p.ultimoMensajeAutorRol && p.ultimoMensajeAutorRol !== user.rol) {
+            const antesVistoVendedor = antes ? antes.chatVistoVendedor : true;
+            const antesVistoAlmacen = antes ? antes.chatVistoAlmacen : true;
+            const yaEraNoVisto = user.rol === "vendedor" ? !antesVistoVendedor : !antesVistoAlmacen;
+            const ahoraNoVisto = user.rol === "vendedor" ? !p.chatVistoVendedor : !p.chatVistoAlmacen;
+            const meAplica = user.rol === "vendedor" ? p.vendedorId === user.id : true;
+            if (meAplica && ahoraNoVisto && (!antes || !yaEraNoVisto)) {
+              notificar("Nuevo mensaje", { body: `Pedido ${p.id} · ${p.cliente}`, tag: `chat-${p.id}-${p.ultimoMensajeEn}` });
+            }
+          }
+        }
+      }
+
+      pedidosAnterioresRef.current = new Map(lista.map(p => [p.id, p]));
+      primerCargaRef.current = false;
       setPedidos(lista);
     } catch (e) { /* se reintenta en el próximo poll */ }
     setCargandoPedidos(false);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   useEffect(() => {
-    if (!user || vista !== "home") return;
+    if (!user) return;
     cargarPedidos();
     const iv = setInterval(cargarPedidos, 5000);
     return () => clearInterval(iv);
-  }, [user, vista, cargarPedidos]);
+  }, [user, cargarPedidos]);
 
   function handleLogin(u) {
     setUser(u);
@@ -155,9 +196,22 @@ export default function App() {
     return <div className="app-root"><LoginScreen onLogin={handleLogin} /></div>;
   }
 
+  const notifPedidosCount = user.rol === "almacenero"
+    ? pedidos.filter(p => p.estado === "pendiente" && !p.vistoPorAlmacen).length
+    : 0;
+  const notifChatCount = pedidos.filter(p => user.rol === "vendedor"
+    ? (p.vendedorId === user.id && !p.chatVistoVendedor)
+    : !p.chatVistoAlmacen
+  ).length;
+
   return (
     <div className="app-root">
-      <TopBar user={user} onLogout={handleLogout} onBack={vista !== "home" ? () => { setVista("home"); cargarPedidos(); } : null} />
+      <TopBar
+        user={user} onLogout={handleLogout}
+        onBack={vista !== "home" ? () => { setVista("home"); cargarPedidos(); } : null}
+        notifPermiso={notifPermiso} onActivarNotificaciones={activarNotificaciones}
+        notifCount={notifPedidosCount + notifChatCount}
+      />
 
       {vista === "home" && (
         <div className="container">

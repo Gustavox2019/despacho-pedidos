@@ -54,3 +54,23 @@ export function matchCode(raw) {
 }
 
 export { CODIGOS_PRODUCTOS };
+
+// Sugerencias para autocompletar mientras alguien escribe un código a mano:
+// prioriza los que EMPIEZAN con lo escrito, y si no hay suficientes, agrega
+// los que lo CONTIENEN en cualquier posición.
+export function buscarCodigos(query, limite = 8) {
+  const q = normCode(query);
+  if (!q) return [];
+  const prefijo = [];
+  const contiene = [];
+  for (const c of CODIGOS_PRODUCTOS) {
+    const n = normCode(c);
+    if (n.startsWith(q)) {
+      prefijo.push(c);
+      if (prefijo.length >= limite) break;
+    } else if (contiene.length < limite && n.includes(q)) {
+      contiene.push(c);
+    }
+  }
+  return [...prefijo, ...contiene].slice(0, limite);
+}

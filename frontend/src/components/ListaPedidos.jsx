@@ -121,11 +121,13 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
         </div>
       ) : (
         filtrados.map(p => {
-          const notifPendiente = p.vendedorId === user.id && p.estado === "finalizado" && !p.vistoPorVendedor;
+          const notifFinalizado = p.vendedorId === user.id && p.estado === "finalizado" && !p.vistoPorVendedor;
+          const notifPedidoNuevo = user.rol === "almacenero" && p.estado === "pendiente" && !p.vistoPorAlmacen;
+          const notifChat = user.rol === "vendedor" ? (p.vendedorId === user.id && !p.chatVistoVendedor) : !p.chatVistoAlmacen;
           const progreso = calcularProgreso(p);
           return (
             <div className={`pedido-row ${p.anclado ? "anclado" : ""}`} key={p.id} onClick={() => onOpen(p.id)}>
-              {notifPendiente && <span className="notif-dot" />}
+              {(notifFinalizado || notifPedidoNuevo) && <span className="notif-dot" />}
               <button
                 className={`pin-btn ${p.anclado ? "activo" : ""}`}
                 title={p.anclado ? "Desanclar" : "Anclar arriba"}
@@ -143,6 +145,7 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
                   {p.historial && p.historial.length > 0 && (
                     <span style={{ color: "var(--amber)" }}> · editado</span>
                   )}
+                  {notifChat && <span className="chat-unread-dot"> · ● mensaje nuevo</span>}
                 </div>
                 {(p.estado === "tomado" || p.estado === "finalizado") && (
                   <div className="progreso-wrap">
