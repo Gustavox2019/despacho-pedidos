@@ -173,7 +173,7 @@ export default function App() {
               {user.rol === "almacenero" && <MenuExportar pedidos={pedidos} />}
             </div>
           </div>
-          <ListaPedidos pedidos={pedidos} user={user} onOpen={abrirPedido} loading={cargandoPedidos} />
+          <ListaPedidos pedidos={pedidos} user={user} onOpen={abrirPedido} loading={cargandoPedidos} onPedidoActualizado={cargarPedidos} />
         </div>
       )}
 

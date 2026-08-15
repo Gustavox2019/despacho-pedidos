@@ -19,7 +19,10 @@ const CAMPOS_PEDIDO = {
   almaceneroNombre: "almacenero_nombre",
   tomadoEn: "tomado_en",
   cajas: "cajas",
-  finalizadoEn: "finalizado_en"
+  finalizadoEn: "finalizado_en",
+  canceladoEn: "cancelado_en",
+  historial: "historial",
+  anclado: "anclado"
 };
 
 // camelCase (lo que manda el frontend) → snake_case (columnas de Postgres).
@@ -81,6 +84,8 @@ router.post("/", async (req, res) => {
       vendedorNombre,
       estado: "pendiente",
       tipo, // ahora lo define el vendedor al crear el pedido, no el almacenero al tomarlo
+      historial: [],
+      anclado: false,
       items: items.map((it, i) => ({
         id: it.id || `it-${i}`,
         cantidad: Number(it.cantidad) || 1,
@@ -125,8 +130,10 @@ router.get("/", async (req, res) => {
       .select(
         "id, cliente, vendedor_id, vendedor_nombre, estado, tipo, items, " +
         "tiene_foto, creado_en, visto_por_vendedor, almacenero_id, " +
-        "almacenero_nombre, tomado_en, cajas, finalizado_en"
+        "almacenero_nombre, tomado_en, cajas, finalizado_en, cancelado_en, " +
+        "historial, anclado"
       )
+      .order("anclado", { ascending: false })
       .order("creado_en", { ascending: false });
     if (vendedorId) query = query.eq("vendedor_id", vendedorId);
 

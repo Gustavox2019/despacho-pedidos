@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
-import { ClipboardList, Loader2 } from "lucide-react";
-import { fmtTime } from "../helpers.js";
+import { ClipboardList, Loader2, Pin } from "lucide-react";
+import { fmtTime, calcularProgreso } from "../helpers.js";
+import { api } from "../api.js";
 
 function coincideRango(pedido, desde, hasta) {
   const iso = new Date(pedido.creadoEn).toISOString().slice(0, 10);
@@ -65,7 +66,7 @@ function aplicarFiltros(lista, filtros, mostrarFecha) {
   return out;
 }
 
-export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
+export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoActualizado }) {
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
   const [tab, setTab] = useState(user.rol === "vendedor" ? "mis-pedidos" : "pendientes");
 
@@ -80,8 +81,18 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
     // "todos": sin filtro adicional
 
     lista = aplicarFiltros(lista, filtros, mostrarFecha);
-    return lista.sort((a, b) => b.creadoEn - a.creadoEn);
+    return lista.sort((a, b) => (b.anclado ? 1 : 0) - (a.anclado ? 1 : 0) || b.creadoEn - a.creadoEn);
   }, [pedidos, filtros, tab, user.id, mostrarFecha]);
+
+  async function togglePin(e, pedido) {
+    e.stopPropagation(); // no abrir el detalle al tocar el pin
+    try {
+      await api.actualizarPedido(pedido.id, { anclado: !pedido.anclado });
+      if (onPedidoActualizado) onPedidoActualizado();
+    } catch (err) {
+      console.error("No se pudo anclar/desanclar:", err);
+    }
+  }
 
   return (
     <div>
@@ -111,16 +122,36 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
       ) : (
         filtrados.map(p => {
           const notifPendiente = p.vendedorId === user.id && p.estado === "finalizado" && !p.vistoPorVendedor;
+          const progreso = calcularProgreso(p);
           return (
-            <div className="pedido-row" key={p.id} onClick={() => onOpen(p.id)}>
+            <div className={`pedido-row ${p.anclado ? "anclado" : ""}`} key={p.id} onClick={() => onOpen(p.id)}>
               {notifPendiente && <span className="notif-dot" />}
+              <button
+                className={`pin-btn ${p.anclado ? "activo" : ""}`}
+                title={p.anclado ? "Desanclar" : "Anclar arriba"}
+                onClick={e => togglePin(e, p)}
+              >
+                <Pin size={15} fill={p.anclado ? "currentColor" : "none"} />
+              </button>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="pedido-id">{p.id}</div>
                 <div className="pedido-cliente">{p.cliente}</div>
                 <div className="pedido-meta">
                   {p.items.length} códigos · {fmtTime(p.creadoEn)}
                   {p.estado === "finalizado" && p.finalizadoEn && ` · Finalizado ${fmtTime(p.finalizadoEn)}`}
+                  {p.estado === "cancelado" && p.canceladoEn && ` · Cancelado ${fmtTime(p.canceladoEn)}`}
+                  {p.historial && p.historial.length > 0 && (
+                    <span style={{ color: "var(--amber)" }}> · editado</span>
+                  )}
                 </div>
+                {(p.estado === "tomado" || p.estado === "finalizado") && (
+                  <div className="progreso-wrap">
+                    <div className="progreso-track">
+                      <div className={`progreso-fill ${progreso >= 100 ? "completo" : ""}`} style={{ width: `${progreso}%` }} />
+                    </div>
+                    <div className="progreso-label">{progreso}%</div>
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                   <span className="name-chip vendedor">V: {p.vendedorNombre}</span>
                   {p.almaceneroNombre && <span className="name-chip almacenero">A: {p.almaceneroNombre}</span>}
@@ -130,6 +161,7 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading }) {
                 {p.estado === "pendiente" && "Pendiente"}
                 {p.estado === "tomado" && "En proceso"}
                 {p.estado === "finalizado" && "Finalizado"}
+                {p.estado === "cancelado" && "Cancelado"}
               </span>
             </div>
           );

@@ -88,3 +88,23 @@ alter table pedidos drop column if exists tiene_foto;
 alter table pedidos add column tiene_foto boolean generated always as (
   (foto is not null) or (jsonb_array_length(fotos) > 0)
 ) stored;
+
+-- ============================================================
+-- MIGRACIÓN: cancelar pedido, historial de ediciones, y anclar pedidos
+-- ============================================================
+-- Igual que los bloques anteriores: pégalo en el SQL Editor de Supabase
+-- y dale "Run". Es seguro volver a correrlo, no borra nada existente.
+
+-- "cancelado" como nuevo estado posible (antes solo pendiente/tomado/finalizado)
+alter table pedidos drop constraint if exists pedidos_estado_check;
+alter table pedidos add constraint pedidos_estado_check
+  check (estado in ('pendiente', 'tomado', 'finalizado', 'cancelado'));
+alter table pedidos add column if not exists cancelado_en bigint;
+
+-- Historial de ediciones hechas por el almacenero DESPUÉS de finalizar
+-- el pedido: [{ id, ts, autor, descripcion }, ...]
+alter table pedidos add column if not exists historial jsonb not null default '[]'::jsonb;
+
+-- Pedidos anclados (fijados arriba de la lista, para todos)
+alter table pedidos add column if not exists anclado boolean not null default false;
+create index if not exists idx_pedidos_anclado on pedidos (anclado desc, creado_en desc);

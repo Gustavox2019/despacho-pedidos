@@ -46,3 +46,17 @@ export async function resizeImageToBase64(file, maxDim, calidad = 0.88) {
 }
 
 export function pad4(n) { return String(n).padStart(4, "0"); }
+
+// Calcula el % de avance de un pedido para mostrárselo al vendedor y al
+// almacenero: 0% pendiente, % de códigos ya marcados (✓ o ✕) mientras está
+// "tomado" (aplica igual a pedidos de "separar" o "confirmar", ya que
+// ambos usan el checklist línea por línea), 100% finalizado.
+export function calcularProgreso(pedido) {
+  if (!pedido) return 0;
+  if (pedido.estado === "finalizado") return 100;
+  if (pedido.estado !== "tomado") return 0;
+  const total = pedido.items?.length || 0;
+  if (!total) return 0;
+  const marcados = pedido.items.filter(it => it.check === "ok" || it.check === "no").length;
+  return Math.round((marcados / total) * 100);
+}

@@ -39,8 +39,19 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
       if (parsed.cliente && !clienteRef.current) setCliente(parsed.cliente);
       setItems(prev => [...prev, ...(parsed.items || []).map(it => ({ ...it, id: it.id || uid("it"), fotoId }))]);
     } catch (err) {
-      setFotos(prev => prev.map(f => f.id === fotoId ? { ...f, cargando: false } : f));
-      setErrorOcr(err.message || "No se pudo leer una de las imágenes automáticamente. Puedes agregar las líneas manualmente abajo.");
+      // Ubicamos en qué posición de la galería quedó esta foto para poder
+      // decirle al vendedor exactamente cuál fue la que falló.
+      let numero = "?";
+      setFotos(prev => {
+        const idx = prev.findIndex(f => f.id === fotoId);
+        numero = idx === -1 ? "?" : idx + 1;
+        return prev.map(f => f.id === fotoId ? { ...f, cargando: false } : f);
+      });
+      setErrorOcr(
+        `No se pudo leer la Foto ${numero} automáticamente` +
+        (err.message ? ` (${err.message})` : "") +
+        `. Puedes agregar sus códigos manualmente abajo.`
+      );
     }
   }, []);
 
@@ -193,13 +204,14 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
           ) : (
             <>
               <div className="fotos-gallery">
-                {fotos.map(f => (
+                {fotos.map((f, i) => (
                   <div className="foto-tile" key={f.id}>
                     {f.cargando ? (
                       <div className="foto-tile-loading"><Loader2 className="spin" size={18} /></div>
                     ) : (
                       <img src={f.preview} alt="Foto de la lista" onClick={() => setFotoAmpliada(f.preview)} />
                     )}
+                    <span className="foto-num-badge">Foto {i + 1}</span>
                     <button
                       type="button"
                       className="foto-tile-del"
@@ -272,27 +284,34 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
               <div className="checklist-box">
                 <table className="item-table">
                   <tbody>
-                    {items.map(it => (
-                      <tr className="item-row" key={it.id}>
-                        <td style={{ width: 46 }}>
-                          <input type="number" min="1" className="qty-input" value={it.cantidad}
-                            onChange={e => updateItem(it.id, { cantidad: e.target.value })} />
-                        </td>
-                        <td>
-                          <input type="text" className="code-chip" value={it.codigo}
-                            onChange={e => updateItem(it.id, { codigo: e.target.value, matchStatus: "manual" })} />
-                          <div className={`match-badge match-${it.matchStatus}`} style={{ marginTop: 3 }}>
-                            {it.matchStatus === "exacto" && "✓ en catálogo"}
-                            {it.matchStatus === "aproximado" && "⚠ corregido, verificar"}
-                            {it.matchStatus === "no_encontrado" && "✕ no encontrado — revisar"}
-                            {it.matchStatus === "manual" && "editado manualmente"}
-                          </div>
-                        </td>
-                        <td>
-                          <button className="row-del" onClick={() => removeItem(it.id)}><Trash2 size={15} /></button>
-                        </td>
-                      </tr>
-                    ))}
+                    {items.map(it => {
+                      const idxFoto = it.fotoId ? fotos.findIndex(f => f.id === it.fotoId) : -1;
+                      const numeroFoto = idxFoto === -1 ? null : idxFoto + 1;
+                      return (
+                        <tr className="item-row" key={it.id}>
+                          <td style={{ width: 46 }}>
+                            <input type="number" min="1" className="qty-input" value={it.cantidad}
+                              onChange={e => updateItem(it.id, { cantidad: e.target.value })} />
+                          </td>
+                          <td>
+                            <input type="text" className="code-chip" value={it.codigo}
+                              onChange={e => updateItem(it.id, { codigo: e.target.value, matchStatus: "manual" })} />
+                            <div className={`match-badge match-${it.matchStatus}`} style={{ marginTop: 3 }}>
+                              {it.matchStatus === "exacto" && "✓ en catálogo"}
+                              {it.matchStatus === "aproximado" && "⚠ corregido, verificar"}
+                              {it.matchStatus === "no_encontrado" && "✕ no encontrado — revisar"}
+                              {it.matchStatus === "manual" && "editado manualmente"}
+                              {numeroFoto && (it.matchStatus === "no_encontrado" || it.matchStatus === "aproximado") && (
+                                <span style={{ marginLeft: 5 }}>· Foto {numeroFoto}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            <button className="row-del" onClick={() => removeItem(it.id)}><Trash2 size={15} /></button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

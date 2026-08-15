@@ -150,6 +150,33 @@ body { background:#12151b; }
   .status-enviado, .status-pendiente{ color:var(--amber); border-color:var(--amber-dim); background:rgba(242,169,59,0.10); }
   .status-tomado{ color:var(--teal); border-color:var(--teal-dim); background:rgba(63,198,193,0.10); }
   .status-finalizado{ color:var(--green); border-color:var(--green-dim); background:rgba(62,207,126,0.10); }
+  .status-cancelado{ color:var(--red); border-color:var(--red-dim); background:rgba(239,91,91,0.10); }
+
+  /* --- Barra de progreso del pedido --- */
+  .progreso-wrap{ display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .progreso-track{
+    flex:1; height:6px; border-radius:20px; background:var(--surface2);
+    border:1px solid var(--border); overflow:hidden;
+  }
+  .progreso-fill{ height:100%; border-radius:20px; background:var(--teal); transition:width .25s ease; }
+  .progreso-fill.completo{ background:var(--green); }
+  .progreso-label{ font-size:11px; font-weight:800; color:var(--muted); min-width:32px; text-align:right; }
+
+  /* --- Pedidos anclados --- */
+  .pedido-row{ position:relative; }
+  .pedido-row.anclado{ border-color:var(--amber-dim); background:rgba(242,169,59,0.05); }
+  .pin-btn{
+    background:none; border:none; color:var(--muted2); cursor:pointer; padding:4px;
+    border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .pin-btn:hover{ background:var(--surface2); color:var(--text); }
+  .pin-btn.activo{ color:var(--amber); }
+
+  /* --- Número de foto en la galería de "Nuevo pedido" --- */
+  .foto-num-badge{
+    position:absolute; top:4px; left:4px; background:rgba(0,0,0,0.65); color:#fff;
+    font-size:10px; font-weight:800; padding:2px 6px; border-radius:20px; pointer-events:none;
+  }
   .filter-bar{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
   .filter-bar input[type=date], .filter-bar input[type=text], .filter-bar select{
     background:var(--surface2); border:1px solid var(--border); color:var(--text);

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, CheckCheck, ClipboardList, CheckCircle2, XCircle,
-  Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus, Image as ImageIcon, Layers
+  Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus, Image as ImageIcon, Layers,
+  History, Pin, Ban
 } from "lucide-react";
-import { fmtTime, fmtFechaHora, uid } from "../helpers.js";
+import { fmtTime, fmtFechaHora, uid, calcularProgreso } from "../helpers.js";
 import { api } from "../api.js";
 import { descargarEtiquetas } from "../etiquetas.js";
 import ChatPanel from "./ChatPanel.jsx";
@@ -53,10 +54,26 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
       .catch(err => console.error("No se pudo guardar:", err));
   }
 
+  // Mientras el pedido sigue "tomado" (aún no finalizado) por mí, los
+  // cambios se guardan normal. Una vez finalizado, si soy quien lo tomó,
+  // igual puedo seguir editando — pero cada cambio de check queda anotado
+  // en el historial del pedido, visible para el vendedor.
   function updateItemCheck(itemId, patch) {
+    const itemAnterior = pedido.items.find(it => it.id === itemId);
     const nuevosItems = pedido.items.map(it => it.id === itemId ? { ...it, ...patch } : it);
-    setPedido({ ...pedido, items: nuevosItems });
-    guardarEnSegundoPlano({ items: nuevosItems });
+    const cambios = { items: nuevosItems };
+
+    if (puedeEditarFinalizado && "check" in patch) {
+      const etiqueta = patch.check === "ok" ? "✓ correcto" : patch.check === "no" ? "✕ con problema" : "sin marcar";
+      const entrada = {
+        id: uid("h"), ts: Date.now(), autor: user.nombre,
+        descripcion: `Cambió el código ${itemAnterior?.codigo || ""} a "${etiqueta}" después de finalizar el pedido`
+      };
+      cambios.historial = [...(pedido.historial || []), entrada];
+    }
+
+    setPedido({ ...pedido, ...cambios });
+    guardarEnSegundoPlano(cambios);
   }
 
   async function agregarProducto() {
@@ -65,7 +82,15 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     try {
       const nuevoItem = { id: uid("it"), cantidad: Number(nuevaCantidad) || 1, codigo: nuevoCodigo.trim(), piso: "", fotoId: null, check: null, texto: "" };
       const nuevosItems = [...pedido.items, nuevoItem];
-      const actualizado = await api.actualizarPedido(pedidoId, { items: nuevosItems });
+      const patch = { items: nuevosItems };
+      if (puedeEditarFinalizado) {
+        const entrada = {
+          id: uid("h"), ts: Date.now(), autor: user.nombre,
+          descripcion: `Agregó el código ${nuevoItem.codigo} (cant. ${nuevoItem.cantidad}) después de finalizar el pedido`
+        };
+        patch.historial = [...(pedido.historial || []), entrada];
+      }
+      const actualizado = await api.actualizarPedido(pedidoId, patch);
       pedidoRef.current = actualizado;
       setPedido(actualizado);
       setNuevoCodigo("");
@@ -141,6 +166,28 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     }
   }
 
+  // El vendedor puede cancelar su pedido mientras no esté finalizado.
+  async function cancelarPedido() {
+    const ok = window.confirm("¿Seguro que quieres cancelar este pedido? El almacén dejará de atenderlo.");
+    if (!ok) return;
+    setGuardando(true);
+    try {
+      const actualizado = await api.actualizarPedido(pedidoId, {
+        estado: "cancelado", canceladoEn: Date.now()
+      });
+      pedidoRef.current = actualizado;
+      setPedido(actualizado);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  async function toggleAnclado() {
+    const actualizado = await api.actualizarPedido(pedidoId, { anclado: !pedido.anclado });
+    pedidoRef.current = actualizado;
+    setPedido(actualizado);
+  }
+
   if (!pedido) {
     return <div className="container"><div className="empty-state"><Loader2 className="spin" size={26} /></div></div>;
   }
@@ -149,12 +196,19 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   // Ahora el checklist línea por línea aplica a los dos tipos de pedido:
   // en "separar" además se piden las cajas; en "confirmar" basta con
   // marcar cada código para poder confirmar el pedido.
-  const puedeMarcar = pedido.estado === "tomado" && yoLoTome;
-  const puedeAgregarProducto = pedido.estado !== "finalizado";
+  const puedeMarcarActivo = pedido.estado === "tomado" && yoLoTome;
+  // El almacenero que separó el pedido puede seguir editando el checklist
+  // incluso después de finalizarlo — pero cada cambio queda anotado en el
+  // historial del pedido (ver updateItemCheck / agregarProducto).
+  const puedeEditarFinalizado = pedido.estado === "finalizado" && yoLoTome;
+  const puedeMarcar = puedeMarcarActivo || puedeEditarFinalizado;
+  const puedeAgregarProducto = (pedido.estado !== "finalizado" && pedido.estado !== "cancelado") || puedeEditarFinalizado;
+  const puedeCancelar = pedido.vendedorId === user.id && (pedido.estado === "pendiente" || pedido.estado === "tomado");
   const todosMarcados = pedido.items.every(it => it.check === "ok" || it.check === "no");
   const cajasValidas = Number(cajasInput) > 0;
-  const puedeFinalizarSeparar = puedeMarcar && pedido.tipo === "separar" && todosMarcados && cajasValidas;
-  const puedeFinalizarConfirmar = puedeMarcar && pedido.tipo === "confirmar" && todosMarcados;
+  const puedeFinalizarSeparar = puedeMarcarActivo && pedido.tipo === "separar" && todosMarcados && cajasValidas;
+  const puedeFinalizarConfirmar = puedeMarcarActivo && pedido.tipo === "confirmar" && todosMarcados;
+  const progreso = calcularProgreso(pedido);
 
   const linkWhatsapp = NUMERO_WHATSAPP
     ? `https://wa.me/${NUMERO_WHATSAPP}?text=${encodeURIComponent(`Tengo un problema con el pedido ${pedido.id}`)}`
@@ -167,11 +221,20 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           <div className="pedido-id" style={{ fontSize: 13 }}>{pedido.id}</div>
           <div className="page-title">{pedido.cliente}</div>
         </div>
-        {linkWhatsapp && (
-          <a href={linkWhatsapp} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap", color: "#25D366", borderColor: "#25D366" }}>
-            <MessageSquare size={14} /> WhatsApp
-          </a>
-        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className={`pin-btn ${pedido.anclado ? "activo" : ""}`}
+            title={pedido.anclado ? "Desanclar pedido" : "Anclar pedido arriba de la lista"}
+            onClick={toggleAnclado}
+          >
+            {pedido.anclado ? <Pin size={17} fill="currentColor" /> : <Pin size={17} />}
+          </button>
+          {linkWhatsapp && (
+            <a href={linkWhatsapp} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap", color: "#25D366", borderColor: "#25D366" }}>
+              <MessageSquare size={14} /> WhatsApp
+            </a>
+          )}
+        </div>
       </div>
       <div className="page-sub">
         Vendedor: {pedido.vendedorNombre} · {fmtTime(pedido.creadoEn)}{" "}
@@ -179,12 +242,32 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           {pedido.estado === "pendiente" && "Pendiente"}
           {pedido.estado === "tomado" && "En proceso"}
           {pedido.estado === "finalizado" && "Finalizado"}
+          {pedido.estado === "cancelado" && "Cancelado"}
         </span>
       </div>
+
+      {pedido.estado !== "cancelado" && (
+        <div className="progreso-wrap" style={{ marginBottom: 16 }}>
+          <div className="progreso-track">
+            <div className={`progreso-fill ${progreso >= 100 ? "completo" : ""}`} style={{ width: `${progreso}%` }} />
+          </div>
+          <div className="progreso-label">{progreso}%</div>
+        </div>
+      )}
 
       {pedido.estado === "finalizado" && pedido.finalizadoEn && (
         <div className="page-sub" style={{ marginTop: -14 }}>
           <CheckCheck size={12} style={{ verticalAlign: -2 }} /> Finalizado el {fmtFechaHora(pedido.finalizadoEn)}
+          {pedido.historial && pedido.historial.length > 0 && (
+            <span style={{ color: "var(--amber)" }}> · editado después ({pedido.historial.length})</span>
+          )}
+        </div>
+      )}
+
+      {pedido.estado === "cancelado" && (
+        <div className="banner banner-warn" style={{ background: "rgba(239,91,91,0.08)", borderColor: "var(--red-dim)", color: "var(--red)" }}>
+          <Ban size={16} />
+          <div>Pedido cancelado{pedido.canceladoEn ? ` el ${fmtFechaHora(pedido.canceladoEn)}` : ""}.</div>
         </div>
       )}
 
@@ -228,6 +311,31 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           </div>
           <button className="btn btn-outline btn-block" disabled={guardando} onClick={reenviarParaSeparar}>
             {guardando ? <Loader2 className="spin" size={15} /> : (<><Layers size={14} /> Separar pedido</>)}
+          </button>
+        </div>
+      )}
+
+      {pedido.historial && pedido.historial.length > 0 && (
+        <div className="card" style={{ marginBottom: 16, borderColor: "var(--amber-dim)" }}>
+          <div className="section-label" style={{ marginTop: 0, color: "var(--amber)" }}>
+            <History size={13} /> Editado después de finalizar
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {pedido.historial.slice().reverse().map(h => (
+              <div key={h.id} style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>
+                <strong style={{ color: "var(--text)" }}>{h.autor}</strong> · {fmtFechaHora(h.ts)}
+                <br />{h.descripcion}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {puedeCancelar && (
+        <div style={{ marginBottom: 16 }}>
+          <button className="btn btn-outline btn-sm" style={{ color: "var(--red)", borderColor: "var(--red-dim)" }}
+            disabled={guardando} onClick={cancelarPedido}>
+            <Ban size={13} /> Cancelar pedido
           </button>
         </div>
       )}
@@ -311,7 +419,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         </div>
       )}
 
-      {puedeMarcar && pedido.tipo === "separar" && (
+      {puedeMarcarActivo && pedido.tipo === "separar" && (
         <div className="card" style={{ marginTop: 18 }}>
           <div className="field" style={{ marginBottom: 10 }}>
             <label><Boxes size={12} style={{ verticalAlign: -2 }} /> Cantidad de cajas del pedido</label>
@@ -328,7 +436,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         </div>
       )}
 
-      {puedeMarcar && pedido.tipo === "confirmar" && (
+      {puedeMarcarActivo && pedido.tipo === "confirmar" && (
         <div className="card" style={{ marginTop: 18 }}>
           <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 10 }}>
             Marca cada código y confirma que hay stock disponible para este pedido (sin armar cajas).
