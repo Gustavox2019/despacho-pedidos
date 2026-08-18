@@ -296,16 +296,40 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
                           </td>
                           <td>
                             <CodigoInput className="code-chip" value={it.codigo}
-                              onChange={v => updateItem(it.id, { codigo: v, matchStatus: "manual" })} />
+                              onChange={v => updateItem(it.id, { codigo: v, matchStatus: "manual", sugerencia: null })} />
                             <div className={`match-badge match-${it.matchStatus}`} style={{ marginTop: 3 }}>
                               {it.matchStatus === "exacto" && "✓ en catálogo"}
-                              {it.matchStatus === "aproximado" && "⚠ corregido, verificar"}
                               {it.matchStatus === "no_encontrado" && "✕ no encontrado — revisar"}
                               {it.matchStatus === "manual" && "editado manualmente"}
-                              {numeroFoto && (it.matchStatus === "no_encontrado" || it.matchStatus === "aproximado") && (
+                              {it.matchStatus === "sugerido" && "⚠ no está tal cual en el catálogo"}
+                              {numeroFoto && (it.matchStatus === "no_encontrado" || it.matchStatus === "sugerido") && (
                                 <span style={{ marginLeft: 5 }}>· Foto {numeroFoto}</span>
                               )}
                             </div>
+                            {it.matchStatus === "sugerido" && it.sugerencia && (
+                              <div className="sugerencia-box">
+                                <span>
+                                  ¿Quisiste decir <strong>{it.sugerencia}</strong>
+                                  {it.sugerenciaInfo?.descripcion ? ` — ${it.sugerenciaInfo.descripcion}` : ""}?
+                                </span>
+                                <div style={{ display: "flex", gap: 6, marginTop: 5 }}>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline btn-sm"
+                                    onClick={() => updateItem(it.id, { codigo: it.sugerencia, matchStatus: "exacto", sugerencia: null })}
+                                  >
+                                    Usar este código
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline btn-sm"
+                                    onClick={() => updateItem(it.id, { sugerencia: null, matchStatus: "manual" })}
+                                  >
+                                    No, dejar el mío
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </td>
                           <td>
                             <button className="row-del" onClick={() => removeItem(it.id)}><Trash2 size={15} /></button>

@@ -18,6 +18,8 @@ router.post("/", (req, res) => {
         cantidad: Number(it.cantidad) || 1,
         codigo: m.code,
         matchStatus: m.status,
+        sugerencia: m.sugerencia || null,
+        sugerenciaInfo: m.sugerenciaInfo || null,
         piso: ""
       };
     });

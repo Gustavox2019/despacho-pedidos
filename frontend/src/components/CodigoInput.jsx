@@ -45,9 +45,12 @@ export default function CodigoInput({ value, onChange, className, placeholder, o
       />
       {abierto && sugerencias.length > 0 && (
         <div className="codigo-suggestions">
-          {sugerencias.map(c => (
+          {sugerencias.map(p => (
             // onMouseDown (no onClick) para que se dispare ANTES del blur del input
-            <div key={c} className="codigo-suggestion-item" onMouseDown={() => elegir(c)}>{c}</div>
+            <div key={p.codigo} className="codigo-suggestion-item" onMouseDown={() => elegir(p.codigo)}>
+              <strong>{p.codigo}</strong>
+              {p.descripcion && <span style={{ color: "var(--muted)", marginLeft: 6 }}>{p.descripcion}</span>}
+            </div>
           ))}
         </div>
       )}

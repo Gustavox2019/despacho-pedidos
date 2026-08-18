@@ -11,10 +11,11 @@ La imagen puede ser: (a) una lista escrita a mano con lapicero, o (b) una captur
 Extrae cada línea de producto como un objeto con:
 - "cantidad": número (si no aparece, usa 1)
 - "codigo": el código de producto tal como aparece escrito, en mayúsculas, conservando guiones/espacios internos si los tiene.
-Ignora encabezados, totales, firmas o texto que no sea parte de la lista de productos.
+- "categoria": si el código está agrupado bajo un título, encabezado o nombre de categoría de producto (por ejemplo "VALVULA VVTI", "BOBINA DE ENCENDIDO", un nombre de marca, etc.), escribe ese título tal como aparece. Muchas listas ponen un título arriba de un bloque de códigos que pertenecen a esa familia — usa ese título para TODOS los códigos de ese bloque, hasta que cambie a otro título. Si no hay ningún título visible para ese código, usa null.
+Ignora encabezados, totales, firmas o texto que no sea parte de la lista de productos (el título de categoría SÍ es parte de la lista, no lo ignores).
 Si logras identificar un nombre de cliente escrito en la imagen, inclúyelo en "cliente" (si no, usa null).
 Responde ÚNICAMENTE con un JSON válido, sin texto adicional, sin markdown, con este formato exacto:
-{"cliente": "string o null", "items": [{"cantidad": number, "codigo": "string"}]}`;
+{"cliente": "string o null", "items": [{"cantidad": number, "codigo": "string", "categoria": "string o null"}]}`;
 
 router.post("/", async (req, res) => {
   try {
@@ -64,12 +65,14 @@ router.post("/", async (req, res) => {
     const parsed = JSON.parse(clean);
 
     const items = (parsed.items || []).map((it, i) => {
-      const m = matchCode(it.codigo || "");
+      const m = matchCode(it.codigo || "", it.categoria || null);
       return {
         id: "it-" + Date.now() + "-" + i,
         cantidad: Number(it.cantidad) || 1,
         codigo: m.code,
         matchStatus: m.status,
+        sugerencia: m.sugerencia || null,
+        sugerenciaInfo: m.sugerenciaInfo || null,
         piso: ""
       };
     });

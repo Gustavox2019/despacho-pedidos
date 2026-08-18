@@ -273,8 +273,12 @@ body { background:#12151b; }
   }
   .match-badge{ font-size:9.5px; text-transform:uppercase; font-weight:800; letter-spacing:0.04em; }
   .match-exacto{ color:var(--green); }
-  .match-aproximado{ color:var(--amber); }
+  .match-sugerido{ color:var(--amber); }
   .match-no_encontrado{ color:var(--red); }
+  .sugerencia-box{
+    margin-top:6px; padding:8px 10px; background:rgba(242,169,59,0.08);
+    border:1px solid var(--amber-dim); border-radius:8px; font-size:12px; color:var(--text);
+  }
   .qty-input{
     width:52px; font-family:var(--mono); background:var(--surface2); border:1px solid var(--border);
     color:var(--text); border-radius:6px; padding:6px 4px; text-align:center; font-size:13px;
