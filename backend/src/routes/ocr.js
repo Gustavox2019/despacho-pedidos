@@ -4,7 +4,7 @@ import { matchCode } from "../matching.js";
 
 const router = Router();
 
-const GEMINI_MODEL = "gemini-3.6-flash";
+const GEMINI_MODEL = "gemini-2.5-flash-lite";
 
 const PROMPT = `Eres un asistente que transcribe listas de pedidos de repuestos para un almacén.
 La imagen puede ser: (a) una lista escrita a mano con lapicero, o (b) una captura de pantalla de celdas de Excel.
@@ -45,6 +45,15 @@ router.post("/", async (req, res) => {
     const data = await response.json();
     if (!response.ok) {
       console.error("Error de Gemini:", data);
+      // Código 429 = se acabó la cuota gratis del día (o hay mucha demanda
+      // en ese momento) — le damos un mensaje claro en vez del genérico,
+      // para que sepa que puede usar Excel o cargar los códigos a mano
+      // mientras tanto.
+      if (response.status === 429) {
+        return res.status(429).json({
+          error: "Se llegó al límite diario de lecturas automáticas de fotos. Mientras tanto puedes subir un Excel o agregar los códigos manualmente."
+        });
+      }
       return res.status(502).json({ error: "El servicio de transcripción no respondió correctamente." });
     }
 

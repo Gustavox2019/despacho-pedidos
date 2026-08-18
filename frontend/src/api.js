@@ -22,6 +22,9 @@ export const api = {
   transcribir: (imageBase64, mediaType) => request("/ocr", { method: "POST", body: JSON.stringify({ imageBase64, mediaType }) }),
   matchLista: (items) => request("/match", { method: "POST", body: JSON.stringify({ items }) }),
   buscarCodigos: (q) => request(`/codigos/buscar?q=${encodeURIComponent(q)}`),
+  obtenerClavePublicaPush: () => request("/push/clave-publica"),
+  suscribirPush: (payload) => request("/push/suscribir", { method: "POST", body: JSON.stringify(payload) }),
+  desuscribirPush: (endpoint) => request("/push/desuscribir", { method: "POST", body: JSON.stringify({ endpoint }) }),
   loginGoogle: (credential) => request("/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
   guardarRol: (payload) => request("/auth/rol", { method: "POST", body: JSON.stringify(payload) })
 };

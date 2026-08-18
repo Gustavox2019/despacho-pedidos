@@ -1,26 +1,29 @@
 import { Router } from "express";
 import { supabase } from "../supabase.js";
+import { enviarPushAUsuario } from "../push.js";
 
 const router = Router();
 
 // Solo pueden ver/usar el chat de un pedido: el vendedor que lo creó, y
 // (si ya lo tomó alguien) el almacenero que lo tomó. Nadie más — así el
-// chat no se llena de gente ajena al pedido.
-async function tieneAcceso(pedidoId, solicitanteId) {
-  if (!solicitanteId) return false;
+// chat no se llena de gente ajena al pedido. Devuelve el pedido (o null
+// si no existe / no tiene acceso) para reusar sus datos después.
+async function pedidoConAcceso(pedidoId, solicitanteId) {
+  if (!solicitanteId) return null;
   const { data, error } = await supabase
     .from("pedidos")
-    .select("vendedor_id, almacenero_id")
+    .select("id, cliente, vendedor_id, almacenero_id")
     .eq("id", pedidoId)
     .maybeSingle();
-  if (error || !data) return false;
-  return data.vendedor_id === solicitanteId || data.almacenero_id === solicitanteId;
+  if (error || !data) return null;
+  const tieneAcceso = data.vendedor_id === solicitanteId || data.almacenero_id === solicitanteId;
+  return tieneAcceso ? data : null;
 }
 
 router.get("/:pedidoId", async (req, res) => {
   try {
-    const permitido = await tieneAcceso(req.params.pedidoId, req.query.solicitanteId);
-    if (!permitido) return res.status(403).json({ error: "No tienes acceso al chat de este pedido." });
+    const pedido = await pedidoConAcceso(req.params.pedidoId, req.query.solicitanteId);
+    if (!pedido) return res.status(403).json({ error: "No tienes acceso al chat de este pedido." });
 
     const { data, error } = await supabase
       .from("chats")
@@ -40,8 +43,8 @@ router.post("/:pedidoId", async (req, res) => {
     const { autor, rol, texto, solicitanteId } = req.body;
     if (!texto || !texto.trim()) return res.status(400).json({ error: "Mensaje vacío." });
 
-    const permitido = await tieneAcceso(req.params.pedidoId, solicitanteId);
-    if (!permitido) return res.status(403).json({ error: "No tienes acceso al chat de este pedido." });
+    const pedido = await pedidoConAcceso(req.params.pedidoId, solicitanteId);
+    if (!pedido) return res.status(403).json({ error: "No tienes acceso al chat de este pedido." });
 
     const { data: existente, error: errLectura } = await supabase
       .from("chats")
@@ -74,6 +77,17 @@ router.post("/:pedidoId", async (req, res) => {
       .eq("id", req.params.pedidoId);
 
     res.json(mensajes);
+
+    // Push a la otra persona del pedido (nunca a quien acaba de escribir).
+    const destinatarioId = rol === "vendedor" ? pedido.almacenero_id : pedido.vendedor_id;
+    if (destinatarioId) {
+      enviarPushAUsuario(destinatarioId, {
+        titulo: "Nuevo mensaje",
+        cuerpo: `Pedido ${pedido.id} · ${pedido.cliente}: ${nuevo.texto.slice(0, 80)}`,
+        tag: `chat-${pedido.id}`,
+        url: "/"
+      }).catch(err => console.error("Push (chat) falló:", err.message));
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "No se pudo enviar el mensaje." });

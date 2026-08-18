@@ -7,6 +7,7 @@ import ocrRouter from "./routes/ocr.js";
 import authRouter from "./routes/auth.js";
 import matchRouter from "./routes/match.js";
 import codigosRouter from "./routes/codigos.js";
+import pushRouter from "./routes/push.js";
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use("/api/ocr", ocrRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/match", matchRouter);
 app.use("/api/codigos", codigosRouter);
+app.use("/api/push", pushRouter);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {

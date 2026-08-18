@@ -125,3 +125,20 @@ alter table pedidos add column if not exists ultimo_mensaje_en bigint;
 alter table pedidos add column if not exists ultimo_mensaje_autor_rol text;
 alter table pedidos add column if not exists chat_visto_vendedor boolean not null default true;
 alter table pedidos add column if not exists chat_visto_almacen boolean not null default true;
+
+-- ============================================================
+-- MIGRACIÓN: notificaciones push reales (funcionan con el navegador
+-- cerrado, como las de una app de mensajería o las ofertas de una tienda)
+-- ============================================================
+-- Guarda, por dispositivo/navegador suscrito, los datos que hacen falta
+-- para poder mandarle un push más adelante.
+create table if not exists push_subscriptions (
+  endpoint   text primary key,
+  user_id    text not null,
+  rol        text,
+  p256dh     text not null,
+  auth       text not null,
+  creado_en  timestamptz not null default now()
+);
+create index if not exists idx_push_subscriptions_user on push_subscriptions (user_id);
+create index if not exists idx_push_subscriptions_rol on push_subscriptions (rol);

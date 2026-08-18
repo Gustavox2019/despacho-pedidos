@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { supabase } from "../supabase.js";
+import { enviarPushAUsuario, enviarPushARol } from "../push.js";
 
 const router = Router();
 
@@ -120,6 +121,15 @@ router.post("/", async (req, res) => {
     if (error) throw error;
 
     res.json(aPedido(data));
+
+    // Push a todo el almacén — no bloqueante (fire-and-forget); si falla
+    // el envío del push, no debe afectar la respuesta ya mandada.
+    enviarPushARol("almacenero", {
+      titulo: "Nuevo pedido",
+      cuerpo: `${cliente} · ${pedido.items.length} código(s)`,
+      tag: `pedido-${id}`,
+      url: "/"
+    }).catch(err => console.error("Push (pedido nuevo) falló:", err.message));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "No se pudo crear el pedido." });
@@ -180,6 +190,16 @@ router.patch("/:id", async (req, res) => {
     if (Object.keys(cambios).length === 0) {
       return res.status(400).json({ error: "Nada que actualizar." });
     }
+
+    // Si este PATCH cambia el estado, necesitamos saber cuál era el
+    // anterior para poder avisarle al vendedor solo cuando de verdad
+    // cambió (y no en cada guardado silencioso del checklist).
+    let estadoAnterior = null;
+    if (cambios.estado) {
+      const { data: previo } = await supabase.from("pedidos").select("estado").eq("id", req.params.id).maybeSingle();
+      estadoAnterior = previo?.estado || null;
+    }
+
     const { data, error } = await supabase
       .from("pedidos")
       .update(cambios)
@@ -188,7 +208,23 @@ router.patch("/:id", async (req, res) => {
       .maybeSingle();
     if (error) throw error;
     if (!data) return res.status(404).json({ error: "Pedido no encontrado." });
+
     res.json(aPedido(data));
+
+    if (cambios.estado && cambios.estado !== estadoAnterior && data.vendedor_id) {
+      const textos = {
+        tomado: "Tu pedido está en proceso.",
+        finalizado: data.tipo === "confirmar" ? "Tu pedido fue confirmado." : `Tu pedido fue finalizado · ${data.cajas || 0} caja(s).`,
+        cancelado: "Tu pedido fue cancelado.",
+        pendiente: "Tu pedido volvió a quedar pendiente."
+      };
+      enviarPushAUsuario(data.vendedor_id, {
+        titulo: `Pedido ${data.id}`,
+        cuerpo: textos[cambios.estado] || `${data.cliente} cambió de estado.`,
+        tag: `estado-${data.id}-${cambios.estado}`,
+        url: "/"
+      }).catch(err => console.error("Push (cambio de estado) falló:", err.message));
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "No se pudo actualizar el pedido." });
