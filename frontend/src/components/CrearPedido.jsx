@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
-import { Camera, Upload, Loader2, AlertTriangle, ClipboardList, Plus, Trash2, Layers, FileSpreadsheet, Clipboard, BadgeCheck, X } from "lucide-react";
+import { Camera, Upload, Loader2, AlertTriangle, ClipboardList, Plus, Trash2, Layers, FileSpreadsheet, Clipboard, BadgeCheck, X, Undo2 } from "lucide-react";
 import { resizeImageToBase64, uid } from "../helpers.js";
 import { parsearExcel } from "../excelParser.js";
 import { api } from "../api.js";
@@ -161,6 +161,65 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
     });
   }
 
+  const itemsConSugerencia = useMemo(
+    () => items.filter(it => it.matchStatus === "sugerido" && it.sugerencia),
+    [items]
+  );
+
+  // Al aceptar una sugerencia (una por una o todas de golpe) guardamos el
+  // código y la sugerencia originales en el mismo ítem, para poder
+  // "deshacer" ese cambio puntual más adelante sin perder el dato.
+  function aceptarSugerencia(id) {
+    setItems(prev => prev.map(it => {
+      if (it.id !== id || !it.sugerencia) return it;
+      return {
+        ...it,
+        codigoAnterior: it.codigo,
+        sugerenciaAnterior: it.sugerencia,
+        sugerenciaInfoAnterior: it.sugerenciaInfo,
+        codigo: it.sugerencia,
+        matchStatus: "exacto",
+        sugerencia: null,
+        sugerenciaInfo: null
+      };
+    }));
+  }
+
+  function aceptarTodasLasSugerencias() {
+    setItems(prev => prev.map(it =>
+      it.matchStatus === "sugerido" && it.sugerencia
+        ? {
+            ...it,
+            codigoAnterior: it.codigo,
+            sugerenciaAnterior: it.sugerencia,
+            sugerenciaInfoAnterior: it.sugerenciaInfo,
+            codigo: it.sugerencia,
+            matchStatus: "exacto",
+            sugerencia: null,
+            sugerenciaInfo: null
+          }
+        : it
+    ));
+  }
+
+  // Deshace el cambio: vuelve al código que había antes y muestra de
+  // nuevo la sugerencia, por si se quiere aceptar otra vez más adelante.
+  function volverAlCodigoAnterior(id) {
+    setItems(prev => prev.map(it => {
+      if (it.id !== id || !it.codigoAnterior) return it;
+      return {
+        ...it,
+        codigo: it.codigoAnterior,
+        matchStatus: "sugerido",
+        sugerencia: it.sugerenciaAnterior || null,
+        sugerenciaInfo: it.sugerenciaInfoAnterior || null,
+        codigoAnterior: null,
+        sugerenciaAnterior: null,
+        sugerenciaInfoAnterior: null
+      };
+    }));
+  }
+
   async function handleEnviar() {
     setEnviando(true);
     try {
@@ -258,6 +317,18 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
             <div className="banner banner-warn"><AlertTriangle size={16} /> {errorOcr}</div>
           )}
 
+          {itemsConSugerencia.length > 0 && (
+            <div className="banner banner-warn">
+              <BadgeCheck size={16} />
+              <div style={{ flex: 1 }}>
+                <div>Hay {itemsConSugerencia.length} código(s) con una sugerencia del catálogo.</div>
+                <button className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={aceptarTodasLasSugerencias}>
+                  Usar todas las sugerencias
+                </button>
+              </div>
+            </div>
+          )}
+
           {gruposRepetidos.length > 0 && (
             <div className="banner banner-warn">
               <Layers size={16} />
@@ -296,7 +367,7 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
                           </td>
                           <td>
                             <CodigoInput className="code-chip" value={it.codigo}
-                              onChange={v => updateItem(it.id, { codigo: v, matchStatus: "manual", sugerencia: null })} />
+                              onChange={v => updateItem(it.id, { codigo: v, matchStatus: "manual", sugerencia: null, codigoAnterior: null })} />
                             <div className={`match-badge match-${it.matchStatus}`} style={{ marginTop: 3 }}>
                               {it.matchStatus === "exacto" && "✓ en catálogo"}
                               {it.matchStatus === "no_encontrado" && "✕ no encontrado — revisar"}
@@ -316,7 +387,7 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
                                   <button
                                     type="button"
                                     className="btn btn-outline btn-sm"
-                                    onClick={() => updateItem(it.id, { codigo: it.sugerencia, matchStatus: "exacto", sugerencia: null })}
+                                    onClick={() => aceptarSugerencia(it.id)}
                                   >
                                     Usar este código
                                   </button>
@@ -329,6 +400,17 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
                                   </button>
                                 </div>
                               </div>
+                            )}
+                            {it.codigoAnterior && (
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
+                                style={{ marginTop: 5 }}
+                                onClick={() => volverAlCodigoAnterior(it.id)}
+                                title={`Antes tenía: ${it.codigoAnterior}`}
+                              >
+                                <Undo2 size={12} /> Volver a "{it.codigoAnterior}"
+                              </button>
                             )}
                           </td>
                           <td>
