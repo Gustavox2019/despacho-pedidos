@@ -4,7 +4,7 @@ import { matchCode } from "../matching.js";
 
 const router = Router();
 
-const GEMINI_MODEL = "gemini-2.5-flash-lite";
+const GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 const PROMPT = `Eres un asistente que transcribe listas de pedidos de repuestos para un almacén.
 La imagen puede ser: (a) una lista escrita a mano con lapicero, o (b) una captura de pantalla de celdas de Excel.
