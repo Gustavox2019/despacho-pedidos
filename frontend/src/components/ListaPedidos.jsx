@@ -1,7 +1,11 @@
 import { useState, useMemo } from "react";
-import { ClipboardList, Loader2, Pin } from "lucide-react";
+import { ClipboardList, Loader2, Pin, Search, X } from "lucide-react";
 import { fmtTime, calcularProgreso } from "../helpers.js";
 import { api } from "../api.js";
+
+function normCode(s) {
+  return (s || "").toUpperCase().replace(/[\s\-\._]/g, "");
+}
 
 function coincideRango(pedido, desde, hasta) {
   const iso = new Date(pedido.creadoEn).toISOString().slice(0, 10);
@@ -69,9 +73,25 @@ function aplicarFiltros(lista, filtros, mostrarFecha) {
 export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoActualizado }) {
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
   const [tab, setTab] = useState(user.rol === "vendedor" ? "mis-pedidos" : "pendientes");
+  const [buscarCodigo, setBuscarCodigo] = useState("");
 
   const mostrarFecha = tab !== "pendientes";
   const mostrarFiltroAlmacenero = tab === "todos";
+
+  // Buscador por código: mientras haya texto acá, se ignoran las pestañas
+  // y filtros normales — busca en TODOS los pedidos (los que tenga
+  // cargados este usuario) cuáles tienen ese código, sirve para ubicar en
+  // qué pedidos quedó un producto que llegó mal o dañado.
+  const resultadosBusqueda = useMemo(() => {
+    const q = normCode(buscarCodigo);
+    if (!q || q.length < 2) return null;
+    const resultados = [];
+    for (const p of pedidos) {
+      const coincidencias = (p.items || []).filter(it => normCode(it.codigo).includes(q));
+      if (coincidencias.length > 0) resultados.push({ pedido: p, coincidencias });
+    }
+    return resultados.sort((a, b) => b.pedido.creadoEn - a.pedido.creadoEn);
+  }, [pedidos, buscarCodigo]);
 
   const filtrados = useMemo(() => {
     let lista = [...pedidos];
@@ -96,80 +116,136 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
 
   return (
     <div>
-      {user.rol !== "vendedor" && (
-        <div className="tabs">
-          <button className={`tab-btn ${tab === "pendientes" ? "active" : ""}`} onClick={() => setTab("pendientes")}>Pendientes</button>
-          <button className={`tab-btn ${tab === "mis-tomados" ? "active" : ""}`} onClick={() => setTab("mis-tomados")}>Tomados por mí</button>
-          <button className={`tab-btn ${tab === "todos" ? "active" : ""}`} onClick={() => setTab("todos")}>Todos</button>
-        </div>
-      )}
+      <div className="search-code-bar">
+        <Search size={15} />
+        <input
+          type="text"
+          placeholder="Buscar en qué pedido(s) está un código…"
+          value={buscarCodigo}
+          onChange={e => setBuscarCodigo(e.target.value)}
+        />
+        {buscarCodigo && (
+          <button className="icon-btn" onClick={() => setBuscarCodigo("")} title="Limpiar búsqueda">
+            <X size={15} />
+          </button>
+        )}
+      </div>
 
-      <FiltrosPedidos
-        pedidos={pedidos}
-        filtros={filtros}
-        setFiltros={setFiltros}
-        mostrarFecha={mostrarFecha}
-        mostrarFiltroVendedor={user.rol !== "vendedor" && tab !== "mis-pedidos"}
-        mostrarFiltroAlmacenero={mostrarFiltroAlmacenero}
-      />
-
-      {loading ? (
-        <div className="empty-state"><Loader2 className="spin" size={26} /></div>
-      ) : filtrados.length === 0 ? (
-        <div className="empty-state">
-          <ClipboardList size={30} style={{ opacity: 0.4, marginBottom: 10 }} />
-          <div>No hay pedidos en esta pestaña o filtro.</div>
-        </div>
-      ) : (
-        filtrados.map(p => {
-          const notifFinalizado = p.vendedorId === user.id && p.estado === "finalizado" && !p.vistoPorVendedor;
-          const notifPedidoNuevo = user.rol === "almacenero" && p.estado === "pendiente" && !p.vistoPorAlmacen;
-          const notifChat = user.rol === "vendedor" ? (p.vendedorId === user.id && !p.chatVistoVendedor) : (p.almaceneroId === user.id && !p.chatVistoAlmacen);
-          const progreso = calcularProgreso(p);
-          return (
-            <div className={`pedido-row ${p.anclado ? "anclado" : ""}`} key={p.id} onClick={() => onOpen(p.id)}>
-              {(notifFinalizado || notifPedidoNuevo) && <span className="notif-dot" />}
-              <button
-                className={`pin-btn ${p.anclado ? "activo" : ""}`}
-                title={p.anclado ? "Desanclar" : "Anclar arriba"}
-                onClick={e => togglePin(e, p)}
-              >
-                <Pin size={15} fill={p.anclado ? "currentColor" : "none"} />
-              </button>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="pedido-id">{p.id}</div>
-                <div className="pedido-cliente">{p.cliente}</div>
-                <div className="pedido-meta">
-                  {p.items.length} códigos · {fmtTime(p.creadoEn)}
-                  {p.estado === "finalizado" && p.finalizadoEn && ` · Finalizado ${fmtTime(p.finalizadoEn)}`}
-                  {p.estado === "cancelado" && p.canceladoEn && ` · Cancelado ${fmtTime(p.canceladoEn)}`}
-                  {p.historial && p.historial.length > 0 && (
-                    <span style={{ color: "var(--amber)" }}> · con historial</span>
-                  )}
-                  {notifChat && <span className="chat-unread-dot"> · ● mensaje nuevo</span>}
-                </div>
-                {(p.estado === "tomado" || p.estado === "finalizado") && (
-                  <div className="progreso-wrap">
-                    <div className="progreso-track">
-                      <div className={`progreso-fill ${progreso >= 100 ? "completo" : ""}`} style={{ width: `${progreso}%` }} />
-                    </div>
-                    <div className="progreso-label">{progreso}%</div>
-                  </div>
-                )}
-                <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-                  <span className="name-chip vendedor">V: {p.vendedorNombre}</span>
-                  {p.almaceneroNombre && <span className="name-chip almacenero">A: {p.almaceneroNombre}</span>}
-                </div>
-              </div>
-              <span className={`status-pill status-${p.estado}`}>
-                {p.estado === "pendiente" && "Pendiente"}
-                {p.estado === "tomado" && "En proceso"}
-                {p.estado === "finalizado" && "Finalizado"}
-                {p.estado === "cancelado" && "Cancelado"}
-              </span>
+      {resultadosBusqueda !== null ? (
+        resultadosBusqueda.length === 0 ? (
+          <div className="empty-state">
+            <Search size={30} style={{ opacity: 0.4, marginBottom: 10 }} />
+            <div>Ningún pedido tiene un código que coincida con "{buscarCodigo}".</div>
+          </div>
+        ) : (
+          <div>
+            <div className="helper-text" style={{ margin: "4px 0 10px" }}>
+              {resultadosBusqueda.length} pedido(s) con ese código:
             </div>
-          );
-        })
+            {resultadosBusqueda.map(({ pedido: p, coincidencias }) => (
+              <div className="pedido-row" key={p.id} onClick={() => onOpen(p.id)}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="pedido-id">{p.id}</div>
+                  <div className="pedido-cliente">{p.cliente}</div>
+                  <div className="pedido-meta">{fmtTime(p.creadoEn)} · V: {p.vendedorNombre}</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                    {coincidencias.map(it => (
+                      <span key={it.id} className="dup-chip">
+                        {it.codigo} × {it.cantidad}
+                        {it.check === "ok" && " · ✓"}
+                        {it.check === "no" && " · ✕"}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <span className={`status-pill status-${p.estado}`}>
+                  {p.estado === "pendiente" && "Pendiente"}
+                  {p.estado === "tomado" && "En proceso"}
+                  {p.estado === "finalizado" && "Finalizado"}
+                  {p.estado === "cancelado" && "Cancelado"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+        <>
+          {user.rol !== "vendedor" && (
+            <div className="tabs">
+              <button className={`tab-btn ${tab === "pendientes" ? "active" : ""}`} onClick={() => setTab("pendientes")}>Pendientes</button>
+              <button className={`tab-btn ${tab === "mis-tomados" ? "active" : ""}`} onClick={() => setTab("mis-tomados")}>Tomados por mí</button>
+              <button className={`tab-btn ${tab === "todos" ? "active" : ""}`} onClick={() => setTab("todos")}>Todos</button>
+            </div>
+          )}
+
+          <FiltrosPedidos
+            pedidos={pedidos}
+            filtros={filtros}
+            setFiltros={setFiltros}
+            mostrarFecha={mostrarFecha}
+            mostrarFiltroVendedor={user.rol !== "vendedor" && tab !== "mis-pedidos"}
+            mostrarFiltroAlmacenero={mostrarFiltroAlmacenero}
+          />
+
+          {loading ? (
+            <div className="empty-state"><Loader2 className="spin" size={26} /></div>
+          ) : filtrados.length === 0 ? (
+            <div className="empty-state">
+              <ClipboardList size={30} style={{ opacity: 0.4, marginBottom: 10 }} />
+              <div>No hay pedidos en esta pestaña o filtro.</div>
+            </div>
+          ) : (
+            filtrados.map(p => {
+              const notifFinalizado = p.vendedorId === user.id && p.estado === "finalizado" && !p.vistoPorVendedor;
+              const notifPedidoNuevo = user.rol === "almacenero" && p.estado === "pendiente" && !p.vistoPorAlmacen;
+              const notifChat = user.rol === "vendedor" ? (p.vendedorId === user.id && !p.chatVistoVendedor) : (p.almaceneroId === user.id && !p.chatVistoAlmacen);
+              const progreso = calcularProgreso(p);
+              return (
+                <div className={`pedido-row ${p.anclado ? "anclado" : ""}`} key={p.id} onClick={() => onOpen(p.id)}>
+                  {(notifFinalizado || notifPedidoNuevo) && <span className="notif-dot" />}
+                  <button
+                    className={`pin-btn ${p.anclado ? "activo" : ""}`}
+                    title={p.anclado ? "Desanclar" : "Anclar arriba"}
+                    onClick={e => togglePin(e, p)}
+                  >
+                    <Pin size={15} fill={p.anclado ? "currentColor" : "none"} />
+                  </button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="pedido-id">{p.id}</div>
+                    <div className="pedido-cliente">{p.cliente}</div>
+                    <div className="pedido-meta">
+                      {p.items.length} códigos · {fmtTime(p.creadoEn)}
+                      {p.estado === "finalizado" && p.finalizadoEn && ` · Finalizado ${fmtTime(p.finalizadoEn)}`}
+                      {p.estado === "cancelado" && p.canceladoEn && ` · Cancelado ${fmtTime(p.canceladoEn)}`}
+                      {p.historial && p.historial.length > 0 && (
+                        <span style={{ color: "var(--amber)" }}> · con historial</span>
+                      )}
+                      {notifChat && <span className="chat-unread-dot"> · ● mensaje nuevo</span>}
+                    </div>
+                    {(p.estado === "tomado" || p.estado === "finalizado") && (
+                      <div className="progreso-wrap">
+                        <div className="progreso-track">
+                          <div className={`progreso-fill ${progreso >= 100 ? "completo" : ""}`} style={{ width: `${progreso}%` }} />
+                        </div>
+                        <div className="progreso-label">{progreso}%</div>
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                      <span className="name-chip vendedor">V: {p.vendedorNombre}</span>
+                      {p.almaceneroNombre && <span className="name-chip almacenero">A: {p.almaceneroNombre}</span>}
+                    </div>
+                  </div>
+                  <span className={`status-pill status-${p.estado}`}>
+                    {p.estado === "pendiente" && "Pendiente"}
+                    {p.estado === "tomado" && "En proceso"}
+                    {p.estado === "finalizado" && "Finalizado"}
+                    {p.estado === "cancelado" && "Cancelado"}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </>
       )}
     </div>
   );
