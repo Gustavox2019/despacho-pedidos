@@ -20,6 +20,7 @@ export const api = {
   listarChat: (pedidoId, solicitanteId) => request(`/chat/${pedidoId}?solicitanteId=${encodeURIComponent(solicitanteId)}`),
   enviarChat: (pedidoId, msg) => request(`/chat/${pedidoId}`, { method: "POST", body: JSON.stringify(msg) }),
   transcribir: (imageBase64, mediaType) => request("/ocr", { method: "POST", body: JSON.stringify({ imageBase64, mediaType }) }),
+  escanearProducto: (imageBase64, mediaType) => request("/escanear", { method: "POST", body: JSON.stringify({ imageBase64, mediaType }) }),
   matchLista: (items) => request("/match", { method: "POST", body: JSON.stringify({ items }) }),
   buscarCodigos: (q) => request(`/codigos/buscar?q=${encodeURIComponent(q)}`),
   obtenerClavePublicaPush: () => request("/push/clave-publica"),

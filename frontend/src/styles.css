@@ -278,7 +278,7 @@ body { background:#12151b; }
   .item-row td{ padding:9px 4px; vertical-align:middle; }
   .code-chip{
     font-family:var(--mono); font-size:12.5px; background:var(--surface2); border:1px solid var(--border);
-    border-radius:6px; padding:6px 8px; width:100%;
+    border-radius:6px; padding:6px 8px; width:100%; color:var(--text);
   }
   .match-badge{ font-size:9.5px; text-transform:uppercase; font-weight:800; letter-spacing:0.04em; }
   .match-exacto{ color:var(--green); }
@@ -298,12 +298,13 @@ body { background:#12151b; }
   .chk-btn{
     width:32px; height:32px; border-radius:8px; border:1.5px solid var(--border); background:var(--surface2);
     display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--muted2); transition:all .12s;
+    flex-shrink:0;
   }
   .chk-btn.active-ok{ background:var(--green-dim); border-color:var(--green); color:var(--green); }
   .chk-btn.active-no{ background:var(--red-dim); border-color:var(--red); color:var(--red); }
   .txt-mini{
-    width:64px; font-size:11px; background:var(--surface2); border:1px solid var(--border);
-    color:var(--text); border-radius:6px; padding:5px 6px;
+    flex:1; min-width:120px; font-size:12.5px; background:var(--surface2); border:1px solid var(--border);
+    color:var(--text); border-radius:6px; padding:8px 9px;
   }
   .section-label{
     font-size:11px; text-transform:uppercase; letter-spacing:0.09em; color:var(--muted); font-weight:800;

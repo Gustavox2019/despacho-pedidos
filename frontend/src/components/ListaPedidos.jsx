@@ -1,11 +1,7 @@
 import { useState, useMemo } from "react";
 import { ClipboardList, Loader2, Pin, Search, X } from "lucide-react";
-import { fmtTime, calcularProgreso } from "../helpers.js";
+import { fmtTime, calcularProgreso, normCode } from "../helpers.js";
 import { api } from "../api.js";
-
-function normCode(s) {
-  return (s || "").toUpperCase().replace(/[\s\-\._]/g, "");
-}
 
 function coincideRango(pedido, desde, hasta) {
   const iso = new Date(pedido.creadoEn).toISOString().slice(0, 10);
@@ -220,6 +216,12 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
                       {p.historial && p.historial.length > 0 && (
                         <span style={{ color: "var(--amber)" }}> · con historial</span>
                       )}
+                      {(() => {
+                        const conDetalle = p.items.filter(it => it.texto && it.texto.trim()).length;
+                        return conDetalle > 0 ? (
+                          <span style={{ color: "var(--amber)", fontWeight: 700 }}> · ⚠ {conDetalle} con detalle</span>
+                        ) : null;
+                      })()}
                       {notifChat && <span className="chat-unread-dot"> · ● mensaje nuevo</span>}
                     </div>
                     {(p.estado === "tomado" || p.estado === "finalizado") && (

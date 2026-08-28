@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, CheckCheck, ClipboardList, CheckCircle2, XCircle,
   Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus, Image as ImageIcon, Layers,
-  History, Pin, Ban, Undo2
+  History, Pin, Ban, Undo2, ScanLine, AlertTriangle
 } from "lucide-react";
-import { fmtTime, fmtFechaHora, uid, calcularProgreso } from "../helpers.js";
+import { fmtTime, fmtFechaHora, uid, calcularProgreso, normCode, resizeImageToBase64 } from "../helpers.js";
 import { api } from "../api.js";
 import { descargarEtiquetas } from "../etiquetas.js";
 import ChatPanel from "./ChatPanel.jsx";
@@ -21,6 +21,9 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   const [nuevoCodigo, setNuevoCodigo] = useState("");
   const [agregando, setAgregando] = useState(false);
   const [fotoAmpliada, setFotoAmpliada] = useState(null);
+  const [escaneando, setEscaneando] = useState(false);
+  const [resultadoEscaneo, setResultadoEscaneo] = useState(null); // { tipo, codigoLeido, item }
+  const fileRefEscaner = useRef(null);
   const pedidoRef = useRef(null);
 
   const cargar = useCallback(async () => {
@@ -96,6 +99,43 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
 
     setPedido({ ...pedido, ...cambios });
     guardarEnSegundoPlano(cambios);
+  }
+
+  // Escanear el producto físico (foto de su etiqueta/caja) para
+  // confirmar que sea el código correcto antes de marcarlo — evita el
+  // caso de "pedían un código y bajaron otro parecido por error".
+  async function procesarFotoEscaneo(file) {
+    if (!file) return;
+    setEscaneando(true);
+    setResultadoEscaneo(null);
+    try {
+      const b64 = await resizeImageToBase64(file, 900, 0.85);
+      const { codigo } = await api.escanearProducto(b64, "image/jpeg");
+      if (!codigo) {
+        setResultadoEscaneo({ tipo: "no_leido" });
+        return;
+      }
+      const n = normCode(codigo);
+      const item = pedido.items.find(it => normCode(it.codigo) === n);
+      if (!item) {
+        setResultadoEscaneo({ tipo: "no_pertenece", codigoLeido: codigo });
+      } else if (!item.check) {
+        // Coincide y no estaba marcado — se confirma directo, sin preguntar.
+        updateItemCheck(item.id, { check: "ok" });
+        setResultadoEscaneo({ tipo: "confirmado", codigoLeido: codigo, item });
+      } else {
+        setResultadoEscaneo({ tipo: "ya_marcado", codigoLeido: codigo, item });
+      }
+    } catch (err) {
+      setResultadoEscaneo({ tipo: "error", mensaje: err.message });
+    } finally {
+      setEscaneando(false);
+    }
+  }
+
+  function confirmarEscaneo(check) {
+    if (resultadoEscaneo?.item) updateItemCheck(resultadoEscaneo.item.id, { check });
+    setResultadoEscaneo(null);
   }
 
   async function agregarProducto() {
@@ -268,6 +308,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   const puedeFinalizarSeparar = puedeMarcarActivo && pedido.tipo === "separar" && todosMarcados && cajasValidas;
   const puedeFinalizarConfirmar = puedeMarcarActivo && pedido.tipo === "confirmar" && todosMarcados;
   const progreso = calcularProgreso(pedido);
+  const itemsConDetalle = pedido.items.filter(it => it.texto && it.texto.trim());
 
   const linkWhatsapp = NUMERO_WHATSAPP
     ? `https://wa.me/${NUMERO_WHATSAPP}?text=${encodeURIComponent(`Tengo un problema con el pedido ${pedido.id}`)}`
@@ -311,6 +352,13 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
             <div className={`progreso-fill ${progreso >= 100 ? "completo" : ""}`} style={{ width: `${progreso}%` }} />
           </div>
           <div className="progreso-label">{progreso}%</div>
+        </div>
+      )}
+
+      {itemsConDetalle.length > 0 && (
+        <div className="banner banner-warn" style={{ marginBottom: 16 }}>
+          <AlertTriangle size={16} />
+          <div>{itemsConDetalle.length} código{itemsConDetalle.length > 1 ? "s" : ""} con detalle en este pedido.</div>
         </div>
       )}
 
@@ -432,6 +480,64 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         <div className="banner banner-warn"><ClipboardList size={16} /> Este pedido ya lo está {pedido.tipo === "confirmar" ? "confirmando" : "preparando"} {pedido.almaceneroNombre}.</div>
       )}
 
+      {puedeMarcarActivo && (
+        <div style={{ marginBottom: 14 }}>
+          <button className="btn btn-outline btn-block" disabled={escaneando} onClick={() => fileRefEscaner.current?.click()}>
+            {escaneando ? <Loader2 className="spin" size={15} /> : (<><ScanLine size={15} /> Escanear producto para confirmar</>)}
+          </button>
+          <input
+            ref={fileRefEscaner} type="file" accept="image/*" capture="environment" style={{ display: "none" }}
+            onChange={e => { procesarFotoEscaneo(e.target.files[0]); e.target.value = ""; }}
+          />
+
+          {resultadoEscaneo?.tipo === "no_leido" && (
+            <div className="banner banner-warn" style={{ marginTop: 10 }}>
+              <AlertTriangle size={16} /> No se distinguió ningún código en la foto. Intenta de nuevo, más de cerca.
+            </div>
+          )}
+
+          {resultadoEscaneo?.tipo === "error" && (
+            <div className="banner banner-warn" style={{ marginTop: 10 }}>
+              <AlertTriangle size={16} /> {resultadoEscaneo.mensaje}
+            </div>
+          )}
+
+          {resultadoEscaneo?.tipo === "no_pertenece" && (
+            <div className="banner banner-warn" style={{ marginTop: 10, background: "rgba(239,91,91,0.08)", borderColor: "var(--red-dim)", color: "var(--red)" }}>
+              <Ban size={16} />
+              <div>
+                Se leyó el código <strong>{resultadoEscaneo.codigoLeido}</strong> — no corresponde a ningún
+                producto de este pedido. Verifica que sea el correcto antes de despacharlo.
+              </div>
+            </div>
+          )}
+
+          {resultadoEscaneo?.tipo === "confirmado" && (
+            <div className="banner banner-success" style={{ marginTop: 10 }}>
+              <CheckCircle2 size={16} />
+              <div>Confirmado: código <strong>{resultadoEscaneo.item.codigo}</strong> (cant. {resultadoEscaneo.item.cantidad}) marcado ✓.</div>
+            </div>
+          )}
+
+          {resultadoEscaneo?.tipo === "ya_marcado" && (
+            <div className="banner banner-warn" style={{ marginTop: 10 }}>
+              <ScanLine size={16} />
+              <div style={{ flex: 1 }}>
+                <div>
+                  El código <strong>{resultadoEscaneo.item.codigo}</strong> ya estaba marcado como{" "}
+                  {resultadoEscaneo.item.check === "ok" ? "✓ correcto" : "✕ con problema"}. ¿Qué quieres hacer?
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                  <button className="btn btn-teal btn-sm" onClick={() => confirmarEscaneo("ok")}>Marcar ✓</button>
+                  <button className="btn btn-outline btn-sm" style={{ color: "var(--red)", borderColor: "var(--red-dim)" }} onClick={() => confirmarEscaneo("no")}>Marcar ✕</button>
+                  <button className="btn btn-outline btn-sm" onClick={() => setResultadoEscaneo(null)}>Dejar como está</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="section-label"><ClipboardList size={13} /> Checklist</div>
       <div className="checklist-box">
         <table className="item-table">
@@ -443,7 +549,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
                   <div style={{ fontFamily: "var(--mono)", fontSize: 13 }}>{it.codigo}</div>
                   {it.piso && <div style={{ fontSize: 11, color: "var(--muted)" }}>Piso: {it.piso}</div>}
                 </td>
-                <td style={{ width: puedeMarcar ? 190 : 0 }}>
+                <td style={{ width: puedeMarcar ? 260 : 0 }}>
                   {puedeMarcar ? (
                     <div className="check-controls">
                       <button className={`chk-btn ${it.check === "ok" ? "active-ok" : ""}`}
@@ -454,14 +560,20 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
                         onClick={() => updateItemCheck(it.id, { check: it.check === "no" ? null : "no" })}>
                         <XCircle size={16} />
                       </button>
-                      <input type="text" className="txt-mini" placeholder="detalle" value={it.texto || ""}
+                      <input type="text" className="txt-mini" placeholder="Detalle (ej: llegó dañado, faltan piezas...)" value={it.texto || ""}
                         onChange={e => updateItemCheck(it.id, { texto: e.target.value })} />
                     </div>
                   ) : (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      {it.check === "ok" && <CheckCircle2 size={16} color="var(--green)" />}
-                      {it.check === "no" && <XCircle size={16} color="var(--red)" />}
-                      {it.texto && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{it.texto}</span>}
+                      {it.texto ? (
+                        <AlertTriangle size={16} color="var(--amber)" style={{ flexShrink: 0 }} />
+                      ) : (
+                        <>
+                          {it.check === "ok" && <CheckCircle2 size={16} color="var(--green)" />}
+                          {it.check === "no" && <XCircle size={16} color="var(--red)" />}
+                        </>
+                      )}
+                      {it.texto && <span style={{ fontSize: 11.5, color: "var(--amber)", fontWeight: 700 }}>{it.texto}</span>}
                     </div>
                   )}
                 </td>

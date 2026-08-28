@@ -2,6 +2,12 @@ export function uid(prefix) {
   return prefix + "-" + Math.random().toString(36).slice(2, 9);
 }
 
+// Normaliza un código para comparar sin importar mayúsculas, espacios,
+// guiones o puntos (ej. "yb-90002 b" y "YB90002B" se consideran iguales).
+export function normCode(s) {
+  return (s || "").toUpperCase().replace(/[\s\-\._]/g, "");
+}
+
 export function fmtTime(ts) {
   if (!ts) return "";
   const d = new Date(ts);
