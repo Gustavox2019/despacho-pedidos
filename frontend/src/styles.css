@@ -294,7 +294,7 @@ body { background:#12151b; }
   }
   .row-del{ background:none; border:none; color:var(--muted2); cursor:pointer; padding:4px; }
   .row-del:hover{ color:var(--red); }
-  .check-controls{ display:flex; gap:6px; align-items:center; }
+  .check-controls{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
   .chk-btn{
     width:32px; height:32px; border-radius:8px; border:1.5px solid var(--border); background:var(--surface2);
     display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--muted2); transition:all .12s;

@@ -25,13 +25,24 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   const [resultadoEscaneo, setResultadoEscaneo] = useState(null); // { tipo, codigoLeido, item }
   const fileRefEscaner = useRef(null);
   const pedidoRef = useRef(null);
+  // Cuenta cuántos cambios de check/texto están "en camino" de guardarse.
+  // Mientras haya alguno pendiente, el refresco automático (cada 6s) NO
+  // debe pisar lo que se acaba de marcar en pantalla con datos viejos del
+  // servidor — si no, a veces un check recién puesto se veía "desmarcar
+  // solo" porque llegaba una respuesta del servidor de antes del guardado.
+  const pendientesRef = useRef(0);
 
   const cargar = useCallback(async () => {
     try {
       const p = await api.obtenerPedido(pedidoId);
       pedidoRef.current = p;
-      setPedido(p);
-      if (p.cajas) setCajasInput(String(p.cajas));
+      // Si hay un guardado de check/detalle todavía en camino, no
+      // reemplazamos lo que se ve en pantalla con esta respuesta — podría
+      // ser de un momento anterior al clic que acaba de hacer la persona.
+      if (pendientesRef.current === 0) {
+        setPedido(p);
+        if (p.cajas) setCajasInput(String(p.cajas));
+      }
     } catch (e) { /* se reintenta en el próximo poll */ }
   }, [pedidoId]);
 
@@ -74,9 +85,16 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   }, [pedido?.id, pedido?.vistoPorAlmacen, pedido?.chatVistoVendedor, pedido?.chatVistoAlmacen]);
 
   function guardarEnSegundoPlano(patch) {
+    pendientesRef.current += 1;
     api.actualizarPedido(pedidoId, patch)
       .then(actualizado => { pedidoRef.current = actualizado; })
-      .catch(err => console.error("No se pudo guardar:", err));
+      .catch(err => console.error("No se pudo guardar:", err))
+      .finally(() => {
+        pendientesRef.current = Math.max(0, pendientesRef.current - 1);
+        // Ya no queda nada pendiente — sincroniza de una vez con lo que
+        // realmente quedó guardado, sin esperar el próximo refresco.
+        if (pendientesRef.current === 0 && pedidoRef.current) setPedido(pedidoRef.current);
+      });
   }
 
   // Mientras el pedido sigue "tomado" (aún no finalizado) por mí, los
@@ -281,7 +299,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     return <div className="container"><div className="empty-state"><Loader2 className="spin" size={26} /></div></div>;
   }
 
-  const yoLoTome = pedido.almaceneroId === user.id;
+  const yoLoTome = user.rol === "almacenero" && pedido.almaceneroId === user.id;
   // Ahora el checklist línea por línea aplica a los dos tipos de pedido:
   // en "separar" además se piden las cajas; en "confirmar" basta con
   // marcar cada código para poder confirmar el pedido.
@@ -560,6 +578,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
                         onClick={() => updateItemCheck(it.id, { check: it.check === "no" ? null : "no" })}>
                         <XCircle size={16} />
                       </button>
+                      {it.texto && <AlertTriangle size={16} color="var(--amber)" style={{ flexShrink: 0 }} title="Este detalle le va a salir marcado con alerta al vendedor" />}
                       <input type="text" className="txt-mini" placeholder="Detalle (ej: llegó dañado, faltan piezas...)" value={it.texto || ""}
                         onChange={e => updateItemCheck(it.id, { texto: e.target.value })} />
                     </div>
