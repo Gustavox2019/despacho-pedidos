@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Plus, FileSpreadsheet, FileText, BarChart3 } from "lucide-react";
+import { Loader2, Plus, FileSpreadsheet, FileText, BarChart3, Bell, PackageX } from "lucide-react";
 import "./styles.css";
 import { api } from "./api.js";
 import { exportarReporteCSV, exportarReporteXLSX } from "./reporte.js";
@@ -10,6 +10,7 @@ import ListaPedidos from "./components/ListaPedidos.jsx";
 import CrearPedido from "./components/CrearPedido.jsx";
 import DetallePedido from "./components/DetallePedido.jsx";
 import EstadisticasPanel from "./components/EstadisticasPanel.jsx";
+import FaltantesPanel from "./components/FaltantesPanel.jsx";
 
 function MenuExportar({ pedidos }) {
   const [abierto, setAbierto] = useState(false);
@@ -89,6 +90,7 @@ export default function App() {
   const [pedidos, setPedidos] = useState([]);
   const [cargandoPedidos, setCargandoPedidos] = useState(true);
   const [notifPermiso, setNotifPermiso] = useState("default");
+  const [mostrarAvisoNotif, setMostrarAvisoNotif] = useState(false);
 
   useEffect(() => {
     const guardada = localStorage.getItem(SESION_KEY);
@@ -96,9 +98,21 @@ export default function App() {
       try { setUser(JSON.parse(guardada)); } catch (e) { /* ignorar sesión corrupta */ }
     }
     setCargandoSesion(false);
-    setNotifPermiso(permisoActual());
+    const permiso = permisoActual();
+    setNotifPermiso(permiso);
+    // Se le avisa a cada persona que entra si todavía no activó las
+    // notificaciones — una vez por sesión de navegador (si lo cierra o
+    // aparece de nuevo al rato, se le recuerda otra vez).
+    if (permiso === "default" && !sessionStorage.getItem("notif-aviso-cerrado")) {
+      setMostrarAvisoNotif(true);
+    }
     inicializarServiceWorker(); // listo de antemano, así la primera notificación no se demora
   }, []);
+
+  function cerrarAvisoNotif() {
+    setMostrarAvisoNotif(false);
+    sessionStorage.setItem("notif-aviso-cerrado", "1");
+  }
 
   // Ya con sesión iniciada: si el permiso de notificaciones está
   // concedido, (re)confirma la suscripción push en el backend — así,
@@ -111,6 +125,7 @@ export default function App() {
   async function activarNotificaciones() {
     const resultado = await pedirPermiso();
     setNotifPermiso(resultado);
+    setMostrarAvisoNotif(false);
     if (resultado === "granted") await suscribirseAPush(user);
   }
 
@@ -197,6 +212,19 @@ export default function App() {
 
       {vista === "home" && (
         <div className="container">
+          {mostrarAvisoNotif && (
+            <div className="notif-prompt">
+              <div className="notif-prompt-icon"><Bell size={18} /></div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, fontSize: 13.5 }}>Activa las notificaciones</div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Así te enteras al instante de pedidos y mensajes nuevos, aunque tengas cerrado el navegador.</div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+                <button className="btn btn-teal btn-sm" onClick={activarNotificaciones}>Activar</button>
+                <button className="btn btn-ghost btn-sm" onClick={cerrarAvisoNotif}>Ahora no</button>
+              </div>
+            </div>
+          )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
             <div>
               <div className="page-title">{user.rol === "vendedor" ? `Hola, ${user.nombre.split(" ")[0]}` : "Pedidos por despachar"}</div>
@@ -206,6 +234,11 @@ export default function App() {
               <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }} onClick={() => setVista("estadisticas")}>
                 <BarChart3 size={13} /> Estadísticas
               </button>
+              {user.rol === "almacenero" && (
+                <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }} onClick={() => setVista("faltantes")}>
+                  <PackageX size={13} /> Faltantes
+                </button>
+              )}
               {user.rol === "almacenero" && <MenuExportar pedidos={pedidos} />}
             </div>
           </div>
@@ -219,6 +252,15 @@ export default function App() {
             ← Volver
           </button>
           <EstadisticasPanel pedidos={pedidos} />
+        </div>
+      )}
+
+      {vista === "faltantes" && (
+        <div className="container">
+          <button className="btn btn-outline btn-sm" style={{ marginBottom: 16 }} onClick={() => setVista("home")}>
+            ← Volver
+          </button>
+          <FaltantesPanel pedidos={pedidos} />
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Send } from "lucide-react";
 import { fmtTime } from "../helpers.js";
 import { api } from "../api.js";
@@ -7,6 +7,7 @@ export default function ChatPanel({ pedidoId, user }) {
   const [mensajes, setMensajes] = useState([]);
   const [texto, setTexto] = useState("");
   const [cargado, setCargado] = useState(false);
+  const finRef = useRef(null);
 
   const cargar = useCallback(async () => {
     try {
@@ -21,6 +22,12 @@ export default function ChatPanel({ pedidoId, user }) {
     const iv = setInterval(cargar, 4000);
     return () => clearInterval(iv);
   }, [cargar]);
+
+  // Estilo WhatsApp: siempre se ve el último mensaje, sin tener que hacer
+  // scroll manual cada vez que llega uno nuevo.
+  useEffect(() => {
+    finRef.current?.scrollIntoView({ block: "end" });
+  }, [mensajes]);
 
   async function enviar() {
     const t = texto.trim();
@@ -44,6 +51,7 @@ export default function ChatPanel({ pedidoId, user }) {
             <div className="msg-meta">{m.autor} · {fmtTime(m.ts)}</div>
           </div>
         ))}
+        <div ref={finRef} />
       </div>
       <div className="chat-input-row">
         <input type="text" placeholder="Escribe un mensaje…" value={texto}

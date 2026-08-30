@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, CheckCheck, ClipboardList, CheckCircle2, XCircle,
   Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus, Image as ImageIcon, Layers,
-  History, Pin, Ban, Undo2, ScanLine, AlertTriangle
+  History, Pin, Ban, Undo2, ScanLine, AlertTriangle, FileSpreadsheet
 } from "lucide-react";
 import { fmtTime, fmtFechaHora, uid, calcularProgreso, normCode, resizeImageToBase64 } from "../helpers.js";
 import { api } from "../api.js";
 import { descargarEtiquetas } from "../etiquetas.js";
+import { exportarPedidoXLSX } from "../reporte.js";
 import ChatPanel from "./ChatPanel.jsx";
 import CodigoInput from "./CodigoInput.jsx";
 
@@ -23,6 +24,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   const [fotoAmpliada, setFotoAmpliada] = useState(null);
   const [escaneando, setEscaneando] = useState(false);
   const [resultadoEscaneo, setResultadoEscaneo] = useState(null); // { tipo, codigoLeido, item }
+  const [chatAbierto, setChatAbierto] = useState(false);
   const fileRefEscaner = useRef(null);
   const pedidoRef = useRef(null);
   // Cuenta cuántos cambios de check/texto están "en camino" de guardarse.
@@ -65,16 +67,26 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
 
   // Al abrir el pedido: si soy almacenero y es un pedido nuevo, se marca
   // como visto (para que deje de salir el aviso de "pedido nuevo" en la
-  // lista). El chat también se marca como leído acá porque el ChatPanel
-  // siempre está visible dentro del detalle, no hay un paso extra de
-  // "abrir el chat".
+  // lista). El chat NO se marca acá — ahora es un globo flotante, se
+  // marca como leído recién cuando de verdad se abre (ver más abajo).
   useEffect(() => {
     (async () => {
       if (!pedido) return;
+      if (user.rol === "almacenero" && !pedido.vistoPorAlmacen) {
+        const actualizado = await api.actualizarPedido(pedidoId, { vistoPorAlmacen: true });
+        pedidoRef.current = actualizado;
+        setPedido(actualizado);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedido?.id, pedido?.vistoPorAlmacen]);
+
+  // Se marca el chat como leído justo cuando se abre el globo flotante.
+  useEffect(() => {
+    (async () => {
+      if (!pedido || !chatAbierto) return;
       const cambios = {};
-      if (user.rol === "almacenero" && !pedido.vistoPorAlmacen) cambios.vistoPorAlmacen = true;
       if (user.rol === "vendedor" && pedido.vendedorId === user.id && !pedido.chatVistoVendedor) cambios.chatVistoVendedor = true;
-      // Solo el almacenero que YA tomó este pedido puede leer su chat.
       if (user.rol === "almacenero" && pedido.almaceneroId === user.id && !pedido.chatVistoAlmacen) cambios.chatVistoAlmacen = true;
       if (Object.keys(cambios).length === 0) return;
       const actualizado = await api.actualizarPedido(pedidoId, cambios);
@@ -82,7 +94,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
       setPedido(actualizado);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pedido?.id, pedido?.vistoPorAlmacen, pedido?.chatVistoVendedor, pedido?.chatVistoAlmacen]);
+  }, [chatAbierto, pedido?.chatVistoVendedor, pedido?.chatVistoAlmacen]);
 
   function guardarEnSegundoPlano(patch) {
     pendientesRef.current += 1;
@@ -321,6 +333,10 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   // si la hizo el almacenero que lo separó o el vendedor en uno "confirmar".
   const debeRegistrarHistorial = pedido.estado === "finalizado";
   const puedeCancelar = pedido.vendedorId === user.id && (pedido.estado === "pendiente" || pedido.estado === "tomado");
+  const puedeChatear = pedido.vendedorId === user.id || pedido.almaceneroId === user.id;
+  const chatNoLeido = user.rol === "vendedor"
+    ? (pedido.vendedorId === user.id && !pedido.chatVistoVendedor)
+    : (pedido.almaceneroId === user.id && !pedido.chatVistoAlmacen);
   const todosMarcados = pedido.items.every(it => it.check === "ok" || it.check === "no");
   const cajasValidas = Number(cajasInput) > 0;
   const puedeFinalizarSeparar = puedeMarcarActivo && pedido.tipo === "separar" && todosMarcados && cajasValidas;
@@ -340,6 +356,13 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           <div className="page-title">{pedido.cliente}</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className="pin-btn"
+            title="Exportar este pedido a Excel"
+            onClick={() => exportarPedidoXLSX(pedido)}
+          >
+            <FileSpreadsheet size={17} />
+          </button>
           <button
             className={`pin-btn ${pedido.anclado ? "activo" : ""}`}
             title={pedido.anclado ? "Desanclar pedido" : "Anclar pedido arriba de la lista"}
@@ -472,6 +495,15 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           </button>
           <div className="helper-text" style={{ marginTop: 6, textAlign: "left" }}>
             Vuelve a quedar pendiente para que cualquiera del almacén lo tome — queda registrado en el historial.
+          </div>
+        </div>
+      )}
+
+      {pedido.estado === "pendiente" && pedido.vendedorId === user.id && pedido.posicionEnCola && (
+        <div className="banner banner-warn" style={{ marginBottom: 16 }}>
+          <ClipboardList size={16} />
+          <div>
+            Tu pedido está en el puesto <strong>{pedido.posicionEnCola} de {pedido.totalPendientes}</strong> pedidos pendientes por atender.
           </div>
         </div>
       )}
@@ -672,12 +704,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         </div>
       )}
 
-      {(pedido.vendedorId === user.id || pedido.almaceneroId === user.id) ? (
-        <>
-          <div className="section-label"><MessageSquare size={13} /> Chat del pedido</div>
-          <ChatPanel pedidoId={pedido.id} user={user} />
-        </>
-      ) : (
+      {(pedido.vendedorId === user.id || pedido.almaceneroId === user.id) ? null : (
         <div className="helper-text" style={{ marginTop: 20 }}>
           El chat de este pedido solo lo pueden usar el vendedor y quien lo tome del almacén.
         </div>
@@ -691,6 +718,26 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
         <div className="lightbox-overlay" onClick={() => setFotoAmpliada(null)}>
           <button className="lightbox-close" onClick={() => setFotoAmpliada(null)}>✕</button>
           <img src={fotoAmpliada} alt="Foto original en tamaño completo" />
+        </div>
+      )}
+
+      {/* Chat flotante (globo, como WhatsApp) — solo para el vendedor
+          dueño del pedido y quien lo tome del almacén. */}
+      {puedeChatear && !chatAbierto && (
+        <button className="chat-fab" onClick={() => setChatAbierto(true)} title="Abrir chat del pedido">
+          <MessageSquare size={24} />
+          {chatNoLeido && <span className="chat-fab-badge">●</span>}
+        </button>
+      )}
+      {puedeChatear && chatAbierto && (
+        <div className="chat-float-window">
+          <div className="chat-float-header">
+            <span><MessageSquare size={14} style={{ verticalAlign: -2, marginRight: 6 }} /> Chat · {pedido.id}</span>
+            <button className="icon-btn" onClick={() => setChatAbierto(false)}>✕</button>
+          </div>
+          <div className="chat-float-body">
+            <ChatPanel pedidoId={pedido.id} user={user} />
+          </div>
         </div>
       )}
     </div>

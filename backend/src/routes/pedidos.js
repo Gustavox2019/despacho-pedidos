@@ -176,7 +176,22 @@ router.get("/:id", async (req, res) => {
       .maybeSingle();
     if (error) throw error;
     if (!data) return res.status(404).json({ error: "Pedido no encontrado." });
-    res.json(aPedido(data));
+
+    const pedido = aPedido(data);
+
+    // Si sigue pendiente, le mostramos al vendedor cuántos pedidos tiene
+    // adelante en la cola (por orden de llegada).
+    if (data.estado === "pendiente") {
+      const { count: totalPendientes } = await supabase
+        .from("pedidos").select("*", { count: "exact", head: true }).eq("estado", "pendiente");
+      const { count: adelante } = await supabase
+        .from("pedidos").select("*", { count: "exact", head: true })
+        .eq("estado", "pendiente").lt("creado_en", data.creado_en);
+      pedido.posicionEnCola = (adelante || 0) + 1;
+      pedido.totalPendientes = totalPendientes || 0;
+    }
+
+    res.json(pedido);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "No se pudo obtener el pedido." });

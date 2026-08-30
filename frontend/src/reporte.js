@@ -97,3 +97,34 @@ export function exportarReporteXLSX(pedidos, filtro) {
   XLSX.utils.book_append_sheet(libro, hoja, "Pedidos");
   XLSX.writeFile(libro, nombreArchivo("xlsx"));
 }
+
+// Exporta UN solo pedido a Excel (para el vendedor o el almacén, con el
+// detalle completo del checklist tal como quedó).
+export function exportarPedidoXLSX(pedido) {
+  const filas = [
+    ["Pedido", pedido.id],
+    ["Cliente", pedido.cliente],
+    ["Vendedor", pedido.vendedorNombre || ""],
+    ["Almacenero", pedido.almaceneroNombre || ""],
+    ["Tipo", pedido.tipo === "confirmar" ? "Confirmar" : "Separar"],
+    ["Estado", pedido.estado],
+    ["Cajas", pedido.cajas || ""],
+    ["Creado", fechaCorta(pedido.creadoEn)],
+    ["Finalizado", pedido.finalizadoEn ? fechaCorta(pedido.finalizadoEn) : ""],
+    [],
+    ["Cantidad", "Codigo", "Check", "Detalle"]
+  ];
+  for (const it of pedido.items) {
+    filas.push([
+      it.cantidad,
+      it.codigo,
+      it.check === "ok" ? "OK" : it.check === "no" ? "NO" : "",
+      it.texto || ""
+    ]);
+  }
+  const hoja = XLSX.utils.aoa_to_sheet(filas);
+  hoja["!cols"] = [{ wch: 12 }, { wch: 20 }, { wch: 8 }, { wch: 30 }];
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, hoja, pedido.id);
+  XLSX.writeFile(libro, `${pedido.id}.xlsx`);
+}
