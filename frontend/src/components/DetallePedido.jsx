@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, CheckCheck, ClipboardList, CheckCircle2, XCircle,
   Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus, Image as ImageIcon, Layers,
-  History, Pin, Ban, Undo2, ScanLine, AlertTriangle, FileSpreadsheet
+  History, Pin, Ban, Undo2, ScanLine, AlertTriangle, FileSpreadsheet, Ticket
 } from "lucide-react";
 import { fmtTime, fmtFechaHora, uid, calcularProgreso, normCode, resizeImageToBase64 } from "../helpers.js";
 import { api } from "../api.js";
@@ -10,6 +10,7 @@ import { descargarEtiquetas } from "../etiquetas.js";
 import { exportarPedidoXLSX } from "../reporte.js";
 import ChatPanel from "./ChatPanel.jsx";
 import CodigoInput from "./CodigoInput.jsx";
+import CamaraCaptura from "./CamaraCaptura.jsx";
 
 const NUMERO_WHATSAPP = import.meta.env.VITE_WHATSAPP_NUMBER;
 
@@ -25,6 +26,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   const [escaneando, setEscaneando] = useState(false);
   const [resultadoEscaneo, setResultadoEscaneo] = useState(null); // { tipo, codigoLeido, item }
   const [chatAbierto, setChatAbierto] = useState(false);
+  const [camaraAbierta, setCamaraAbierta] = useState(false);
   const fileRefEscaner = useRef(null);
   const pedidoRef = useRef(null);
   // Cuenta cuántos cambios de check/texto están "en camino" de guardarse.
@@ -131,6 +133,28 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     guardarEnSegundoPlano(cambios);
   }
 
+  // Toma el código leído (venga de una foto subida, o de la cámara en
+  // vivo del navegador) y decide qué hacer: marcarlo directo si coincide
+  // y estaba sin marcar, avisar si no pertenece al pedido, o preguntar si
+  // ya estaba marcado.
+  function procesarCodigoEscaneado(codigo) {
+    if (!codigo) {
+      setResultadoEscaneo({ tipo: "no_leido" });
+      return;
+    }
+    const n = normCode(codigo);
+    const item = pedido.items.find(it => normCode(it.codigo) === n);
+    if (!item) {
+      setResultadoEscaneo({ tipo: "no_pertenece", codigoLeido: codigo });
+    } else if (!item.check) {
+      // Coincide y no estaba marcado — se confirma directo, sin preguntar.
+      updateItemCheck(item.id, { check: "ok" });
+      setResultadoEscaneo({ tipo: "confirmado", codigoLeido: codigo, item });
+    } else {
+      setResultadoEscaneo({ tipo: "ya_marcado", codigoLeido: codigo, item });
+    }
+  }
+
   // Escanear el producto físico (foto de su etiqueta/caja) para
   // confirmar que sea el código correcto antes de marcarlo — evita el
   // caso de "pedían un código y bajaron otro parecido por error".
@@ -141,21 +165,23 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     try {
       const b64 = await resizeImageToBase64(file, 900, 0.85);
       const { codigo } = await api.escanearProducto(b64, "image/jpeg");
-      if (!codigo) {
-        setResultadoEscaneo({ tipo: "no_leido" });
-        return;
-      }
-      const n = normCode(codigo);
-      const item = pedido.items.find(it => normCode(it.codigo) === n);
-      if (!item) {
-        setResultadoEscaneo({ tipo: "no_pertenece", codigoLeido: codigo });
-      } else if (!item.check) {
-        // Coincide y no estaba marcado — se confirma directo, sin preguntar.
-        updateItemCheck(item.id, { check: "ok" });
-        setResultadoEscaneo({ tipo: "confirmado", codigoLeido: codigo, item });
-      } else {
-        setResultadoEscaneo({ tipo: "ya_marcado", codigoLeido: codigo, item });
-      }
+      procesarCodigoEscaneado(codigo);
+    } catch (err) {
+      setResultadoEscaneo({ tipo: "error", mensaje: err.message });
+    } finally {
+      setEscaneando(false);
+    }
+  }
+
+  // Mismo flujo, pero con una foto ya capturada por la cámara en vivo del
+  // navegador (viene directo en base64, no hace falta redimensionar un
+  // archivo).
+  async function procesarBase64Escaneo(base64) {
+    setEscaneando(true);
+    setResultadoEscaneo(null);
+    try {
+      const { codigo } = await api.escanearProducto(base64, "image/jpeg");
+      procesarCodigoEscaneado(codigo);
     } catch (err) {
       setResultadoEscaneo({ tipo: "error", mensaje: err.message });
     } finally {
@@ -500,10 +526,13 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
       )}
 
       {pedido.estado === "pendiente" && pedido.vendedorId === user.id && pedido.posicionEnCola && (
-        <div className="banner banner-warn" style={{ marginBottom: 16 }}>
-          <ClipboardList size={16} />
-          <div>
-            Tu pedido está en el puesto <strong>{pedido.posicionEnCola} de {pedido.totalPendientes}</strong> pedidos pendientes por atender.
+        <div className="banner banner-warn" style={{ marginBottom: 16, textAlign: "center", flexDirection: "column", alignItems: "center" }}>
+          <Ticket size={22} style={{ marginBottom: 6 }} />
+          <div style={{ fontSize: 15, fontWeight: 800 }}>
+            Eres el número <span style={{ color: "var(--amber)" }}>{pedido.posicionEnCola}</span> en la fila
+          </div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
+            de {pedido.totalPendientes} pedido{pedido.totalPendientes > 1 ? "s" : ""} pendiente{pedido.totalPendientes > 1 ? "s" : ""} por atender · un momento, gracias por tu paciencia
           </div>
         </div>
       )}
@@ -532,8 +561,17 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
 
       {puedeMarcarActivo && (
         <div style={{ marginBottom: 14 }}>
-          <button className="btn btn-outline btn-block" disabled={escaneando} onClick={() => fileRefEscaner.current?.click()}>
+          <button className="btn btn-outline btn-block" disabled={escaneando} onClick={() => setCamaraAbierta(true)}>
             {escaneando ? <Loader2 className="spin" size={15} /> : (<><ScanLine size={15} /> Escanear producto para confirmar</>)}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ width: "100%", justifyContent: "center", marginTop: 4 }}
+            disabled={escaneando}
+            onClick={() => fileRefEscaner.current?.click()}
+          >
+            ¿No abre la cámara? Sube una foto en su lugar
           </button>
           <input
             ref={fileRefEscaner} type="file" accept="image/*" capture="environment" style={{ display: "none" }}
@@ -719,6 +757,13 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           <button className="lightbox-close" onClick={() => setFotoAmpliada(null)}>✕</button>
           <img src={fotoAmpliada} alt="Foto original en tamaño completo" />
         </div>
+      )}
+
+      {camaraAbierta && (
+        <CamaraCaptura
+          onCapturar={base64 => { setCamaraAbierta(false); procesarBase64Escaneo(base64); }}
+          onCerrar={() => setCamaraAbierta(false)}
+        />
       )}
 
       {/* Chat flotante (globo, como WhatsApp) — solo para el vendedor
