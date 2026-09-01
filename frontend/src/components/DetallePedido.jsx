@@ -358,7 +358,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   // pedido ya está finalizado queda anotada en el historial, sin importar
   // si la hizo el almacenero que lo separó o el vendedor en uno "confirmar".
   const debeRegistrarHistorial = pedido.estado === "finalizado";
-  const puedeCancelar = pedido.vendedorId === user.id && (pedido.estado === "pendiente" || pedido.estado === "tomado");
+  const puedeCancelar = user.rol === "vendedor" && pedido.vendedorId === user.id && (pedido.estado === "pendiente" || pedido.estado === "tomado");
   const puedeChatear = pedido.vendedorId === user.id || pedido.almaceneroId === user.id;
   const chatNoLeido = user.rol === "vendedor"
     ? (pedido.vendedorId === user.id && !pedido.chatVistoVendedor)
