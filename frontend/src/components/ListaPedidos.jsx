@@ -83,7 +83,9 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
     if (!q || q.length < 2) return null;
     const resultados = [];
     for (const p of pedidos) {
-      const coincidencias = (p.items || []).filter(it => normCode(it.codigo).includes(q));
+      const coincidencias = (p.items || []).filter(it =>
+        normCode(it.codigo).includes(q) || (it.codigosAlternos || []).some(alt => normCode(alt).includes(q))
+      );
       if (coincidencias.length > 0) resultados.push({ pedido: p, coincidencias });
     }
     return resultados.sort((a, b) => b.pedido.creadoEn - a.pedido.creadoEn);

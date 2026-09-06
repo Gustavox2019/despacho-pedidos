@@ -28,7 +28,10 @@ const CAMPOS_PEDIDO = {
   ultimoMensajeEn: "ultimo_mensaje_en",
   ultimoMensajeAutorRol: "ultimo_mensaje_autor_rol",
   chatVistoVendedor: "chat_visto_vendedor",
-  chatVistoAlmacen: "chat_visto_almacen"
+  chatVistoAlmacen: "chat_visto_almacen",
+  fotoUbicacion: "foto_ubicacion",
+  areaUbicacion: "area_ubicacion",
+  notasPaquete: "notas_paquete"
 };
 
 // camelCase (lo que manda el frontend) → snake_case (columnas de Postgres).

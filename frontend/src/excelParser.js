@@ -8,6 +8,14 @@ function esNumero(s) {
   return /^\d+([.,]\d+)?$/.test(s);
 }
 
+// Si el código viene como "90002B/YB90002B", son códigos alternativos
+// para el MISMO producto (no productos distintos) — se guarda el primero
+// como código principal y el resto en "codigosAlternos".
+function separarAlternos(codigo) {
+  const partes = codigo.split("/").map(p => p.trim()).filter(Boolean);
+  return { codigo: partes[0] || codigo, codigosAlternos: partes.slice(1) };
+}
+
 function filasAItems(filas) {
   const items = [];
   for (const fila of filas) {
@@ -17,16 +25,19 @@ function filasAItems(filas) {
     const esEncabezado = celdas.some(c => PALABRAS_ENCABEZADO.includes(c.toLowerCase()));
     if (esEncabezado) continue;
 
-    let cantidad = 1, codigo = "";
+    let cantidad = 1, codigoCrudo = "";
     if (celdas.length === 1) {
-      codigo = celdas[0];
+      codigoCrudo = celdas[0];
     } else {
       const [a, b] = celdas;
-      if (esNumero(a)) { cantidad = Math.round(parseFloat(a.replace(",", "."))) || 1; codigo = b; }
-      else if (esNumero(b)) { cantidad = Math.round(parseFloat(b.replace(",", "."))) || 1; codigo = a; }
-      else { codigo = a; }
+      if (esNumero(a)) { cantidad = Math.round(parseFloat(a.replace(",", "."))) || 1; codigoCrudo = b; }
+      else if (esNumero(b)) { cantidad = Math.round(parseFloat(b.replace(",", "."))) || 1; codigoCrudo = a; }
+      else { codigoCrudo = a; }
     }
-    if (codigo) items.push({ cantidad, codigo });
+    if (codigoCrudo) {
+      const { codigo, codigosAlternos } = separarAlternos(codigoCrudo);
+      items.push({ cantidad, codigo, codigosAlternos });
+    }
   }
   return items;
 }

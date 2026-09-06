@@ -412,6 +412,33 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
                                 <Undo2 size={12} /> Volver a "{it.codigoAnterior}"
                               </button>
                             )}
+
+                            {(it.codigosAlternos || []).length > 0 && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+                                {it.codigosAlternos.map((alt, i) => (
+                                  <span key={i} className="dup-chip">
+                                    {alt}
+                                    <button type="button" className="alt-chip-del"
+                                      onClick={() => updateItem(it.id, { codigosAlternos: it.codigosAlternos.filter((_, j) => j !== i) })}>
+                                      <X size={10} />
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ marginTop: 4, padding: "2px 0" }}
+                              onClick={() => {
+                                const alterno = window.prompt("Código alternativo para este mismo producto:");
+                                if (alterno && alterno.trim()) {
+                                  updateItem(it.id, { codigosAlternos: [...(it.codigosAlternos || []), alterno.trim().toUpperCase()] });
+                                }
+                              }}
+                            >
+                              <Plus size={11} /> Código alterno (mismo producto)
+                            </button>
                           </td>
                           <td>
                             <button className="row-del" onClick={() => removeItem(it.id)}><Trash2 size={15} /></button>

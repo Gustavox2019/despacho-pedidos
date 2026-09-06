@@ -20,6 +20,7 @@ router.post("/", (req, res) => {
         matchStatus: m.status,
         sugerencia: m.sugerencia || null,
         sugerenciaInfo: m.sugerenciaInfo || null,
+        codigosAlternos: Array.isArray(it.codigosAlternos) ? it.codigosAlternos : [],
         piso: ""
       };
     });

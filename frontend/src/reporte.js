@@ -115,9 +115,12 @@ export function exportarPedidoXLSX(pedido) {
     ["Cantidad", "Codigo", "Check", "Detalle"]
   ];
   for (const it of pedido.items) {
+    const codigoCompleto = it.codigosAlternos && it.codigosAlternos.length > 0
+      ? `${it.codigo} / ${it.codigosAlternos.join(" / ")}`
+      : it.codigo;
     filas.push([
       it.cantidad,
-      it.codigo,
+      codigoCompleto,
       it.check === "ok" ? "OK" : it.check === "no" ? "NO" : "",
       it.texto || ""
     ]);

@@ -142,3 +142,11 @@ create table if not exists push_subscriptions (
 );
 create index if not exists idx_push_subscriptions_user on push_subscriptions (user_id);
 create index if not exists idx_push_subscriptions_rol on push_subscriptions (rol);
+
+-- ============================================================
+-- MIGRACIÓN: foto/ubicación/notas al finalizar (pedidos "separar"), y
+-- reapertura de un pedido para agregar códigos adicionales por foto
+-- ============================================================
+alter table pedidos add column if not exists foto_ubicacion text;
+alter table pedidos add column if not exists area_ubicacion text;
+alter table pedidos add column if not exists notas_paquete text;

@@ -17,11 +17,19 @@ const NUMERO_WHATSAPP = import.meta.env.VITE_WHATSAPP_NUMBER;
 export default function DetallePedido({ pedidoId, user, onVolver }) {
   const [pedido, setPedido] = useState(null);
   const [cajasInput, setCajasInput] = useState("");
+  const [areaUbicacion, setAreaUbicacion] = useState("");
+  const [notasPaquete, setNotasPaquete] = useState("");
+  const [fotoUbicacionCapturada, setFotoUbicacionCapturada] = useState(null); // dataURL completo
+  const [camaraUbicacionAbierta, setCamaraUbicacionAbierta] = useState(false);
+  const fileRefUbicacion = useRef(null);
   const [guardando, setGuardando] = useState(false);
   const [tomando, setTomando] = useState(false);
   const [nuevaCantidad, setNuevaCantidad] = useState(1);
   const [nuevoCodigo, setNuevoCodigo] = useState("");
   const [agregando, setAgregando] = useState(false);
+  const [agregandoAdicional, setAgregandoAdicional] = useState(false);
+  const [camaraAdicionalAbierta, setCamaraAdicionalAbierta] = useState(false);
+  const fileRefAdicional = useRef(null);
   const [fotoAmpliada, setFotoAmpliada] = useState(null);
   const [escaneando, setEscaneando] = useState(false);
   const [resultadoEscaneo, setResultadoEscaneo] = useState(null); // { tipo, codigoLeido, item }
@@ -143,7 +151,9 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
       return;
     }
     const n = normCode(codigo);
-    const item = pedido.items.find(it => normCode(it.codigo) === n);
+    const item = pedido.items.find(it =>
+      normCode(it.codigo) === n || (it.codigosAlternos || []).some(alt => normCode(alt) === n)
+    );
     if (!item) {
       setResultadoEscaneo({ tipo: "no_pertenece", codigoLeido: codigo });
     } else if (!item.check) {
@@ -218,6 +228,53 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     }
   }
 
+  // Sube una foto con MÁS códigos para este pedido — se agregan marcados
+  // como "adicional" (aparecen aparte, bajo el subtítulo "Adicionales" en
+  // el checklist) y el pedido vuelve a "Pendiente" para que el almacén
+  // los prepare también.
+  async function agregarAdicionalesDesdeFoto(base64) {
+    setAgregandoAdicional(true);
+    try {
+      const { items: nuevos } = await api.transcribir(base64, "image/jpeg");
+      if (!nuevos || nuevos.length === 0) {
+        setResultadoEscaneo({ tipo: "no_leido" });
+        return;
+      }
+      const itemsAdicionales = nuevos.map(it => ({ ...it, adicional: true }));
+      const nuevosItems = [...pedido.items, ...itemsAdicionales];
+      const entrada = {
+        id: uid("h"), ts: Date.now(), autor: user.nombre,
+        descripcion: `Agregó ${itemsAdicionales.length} código(s) adicionales por foto — el pedido volvió a pendiente`
+      };
+      const actualizado = await api.actualizarPedido(pedidoId, {
+        items: nuevosItems,
+        estado: "pendiente",
+        almaceneroId: null,
+        almaceneroNombre: null,
+        tomadoEn: null,
+        vistoPorAlmacen: false,
+        historial: [...(pedido.historial || []), entrada]
+      });
+      pedidoRef.current = actualizado;
+      setPedido(actualizado);
+    } catch (err) {
+      console.error("No se pudieron agregar los adicionales:", err);
+    } finally {
+      setAgregandoAdicional(false);
+    }
+  }
+
+  async function procesarArchivoAdicional(file) {
+    if (!file) return;
+    const b64 = await resizeImageToBase64(file, 1600, 0.85);
+    await agregarAdicionalesDesdeFoto(b64);
+  }
+
+  function procesarCamaraAdicional(base64) {
+    setCamaraAdicionalAbierta(false);
+    agregarAdicionalesDesdeFoto(base64);
+  }
+
   async function tomarPedido() {
     setTomando(true);
     try {
@@ -235,13 +292,25 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     setGuardando(true);
     try {
       const actualizado = await api.actualizarPedido(pedidoId, {
-        estado: "finalizado", cajas: Number(cajasInput), finalizadoEn: Date.now(), vistoPorVendedor: false
+        estado: "finalizado", cajas: Number(cajasInput), finalizadoEn: Date.now(), vistoPorVendedor: false,
+        fotoUbicacion: fotoUbicacionCapturada, areaUbicacion: areaUbicacion.trim(), notasPaquete: notasPaquete.trim()
       });
       pedidoRef.current = actualizado;
       setPedido(actualizado);
     } finally {
       setGuardando(false);
     }
+  }
+
+  async function capturarFotoUbicacionArchivo(file) {
+    if (!file) return;
+    const b64 = await resizeImageToBase64(file, 1000, 0.8);
+    setFotoUbicacionCapturada("data:image/jpeg;base64," + b64);
+  }
+
+  function capturarFotoUbicacionCamara(base64) {
+    setCamaraUbicacionAbierta(false);
+    setFotoUbicacionCapturada("data:image/jpeg;base64," + base64);
   }
 
   async function confirmarPedido() {
@@ -365,10 +434,60 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     : (pedido.almaceneroId === user.id && !pedido.chatVistoAlmacen);
   const todosMarcados = pedido.items.every(it => it.check === "ok" || it.check === "no");
   const cajasValidas = Number(cajasInput) > 0;
-  const puedeFinalizarSeparar = puedeMarcarActivo && pedido.tipo === "separar" && todosMarcados && cajasValidas;
+  const puedeFinalizarSeparar = puedeMarcarActivo && pedido.tipo === "separar" && todosMarcados && cajasValidas &&
+    !!fotoUbicacionCapturada && areaUbicacion.trim().length > 0;
   const puedeFinalizarConfirmar = puedeMarcarActivo && pedido.tipo === "confirmar" && todosMarcados;
   const progreso = calcularProgreso(pedido);
   const itemsConDetalle = pedido.items.filter(it => it.texto && it.texto.trim());
+  const itemsOriginales = pedido.items.filter(it => !it.adicional);
+  const itemsAdicionales = pedido.items.filter(it => it.adicional);
+
+  function renderFilaItem(it) {
+    return (
+      <tr className="item-row" key={it.id}>
+        <td style={{ width: 34, fontFamily: "var(--mono)", fontSize: 13, color: "var(--muted)" }}>{it.cantidad}</td>
+        <td>
+          <div style={{ fontFamily: "var(--mono)", fontSize: 13 }}>
+            {it.codigo}
+            {it.codigosAlternos && it.codigosAlternos.length > 0 && (
+              <span style={{ color: "var(--muted)", fontSize: 11.5 }}> / {it.codigosAlternos.join(" / ")}</span>
+            )}
+          </div>
+          {it.piso && <div style={{ fontSize: 11, color: "var(--muted)" }}>Piso: {it.piso}</div>}
+        </td>
+        <td style={{ width: puedeMarcar ? 260 : 0 }}>
+          {puedeMarcar ? (
+            <div className="check-controls">
+              <button className={`chk-btn ${it.check === "ok" ? "active-ok" : ""}`}
+                onClick={() => updateItemCheck(it.id, { check: it.check === "ok" ? null : "ok" })}>
+                <CheckCircle2 size={16} />
+              </button>
+              <button className={`chk-btn ${it.check === "no" ? "active-no" : ""}`}
+                onClick={() => updateItemCheck(it.id, { check: it.check === "no" ? null : "no" })}>
+                <XCircle size={16} />
+              </button>
+              {it.texto && <AlertTriangle size={16} color="var(--amber)" style={{ flexShrink: 0 }} title="Este detalle le va a salir marcado con alerta al vendedor" />}
+              <input type="text" className="txt-mini" placeholder="Detalle (ej: llegó dañado, faltan piezas...)" value={it.texto || ""}
+                onChange={e => updateItemCheck(it.id, { texto: e.target.value })} />
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {it.texto ? (
+                <AlertTriangle size={16} color="var(--amber)" style={{ flexShrink: 0 }} />
+              ) : (
+                <>
+                  {it.check === "ok" && <CheckCircle2 size={16} color="var(--green)" />}
+                  {it.check === "no" && <XCircle size={16} color="var(--red)" />}
+                </>
+              )}
+              {it.texto && <span style={{ fontSize: 11.5, color: "var(--amber)", fontWeight: 700 }}>{it.texto}</span>}
+            </div>
+          )}
+        </td>
+      </tr>
+    );
+  }
+
 
   const linkWhatsapp = NUMERO_WHATSAPP
     ? `https://wa.me/${NUMERO_WHATSAPP}?text=${encodeURIComponent(`Tengo un problema con el pedido ${pedido.id}`)}`
@@ -630,44 +749,17 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
       <div className="checklist-box">
         <table className="item-table">
           <tbody>
-            {pedido.items.map(it => (
-              <tr className="item-row" key={it.id}>
-                <td style={{ width: 34, fontFamily: "var(--mono)", fontSize: 13, color: "var(--muted)" }}>{it.cantidad}</td>
-                <td>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 13 }}>{it.codigo}</div>
-                  {it.piso && <div style={{ fontSize: 11, color: "var(--muted)" }}>Piso: {it.piso}</div>}
-                </td>
-                <td style={{ width: puedeMarcar ? 260 : 0 }}>
-                  {puedeMarcar ? (
-                    <div className="check-controls">
-                      <button className={`chk-btn ${it.check === "ok" ? "active-ok" : ""}`}
-                        onClick={() => updateItemCheck(it.id, { check: it.check === "ok" ? null : "ok" })}>
-                        <CheckCircle2 size={16} />
-                      </button>
-                      <button className={`chk-btn ${it.check === "no" ? "active-no" : ""}`}
-                        onClick={() => updateItemCheck(it.id, { check: it.check === "no" ? null : "no" })}>
-                        <XCircle size={16} />
-                      </button>
-                      {it.texto && <AlertTriangle size={16} color="var(--amber)" style={{ flexShrink: 0 }} title="Este detalle le va a salir marcado con alerta al vendedor" />}
-                      <input type="text" className="txt-mini" placeholder="Detalle (ej: llegó dañado, faltan piezas...)" value={it.texto || ""}
-                        onChange={e => updateItemCheck(it.id, { texto: e.target.value })} />
-                    </div>
-                  ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      {it.texto ? (
-                        <AlertTriangle size={16} color="var(--amber)" style={{ flexShrink: 0 }} />
-                      ) : (
-                        <>
-                          {it.check === "ok" && <CheckCircle2 size={16} color="var(--green)" />}
-                          {it.check === "no" && <XCircle size={16} color="var(--red)" />}
-                        </>
-                      )}
-                      {it.texto && <span style={{ fontSize: 11.5, color: "var(--amber)", fontWeight: 700 }}>{it.texto}</span>}
-                    </div>
-                  )}
+            {itemsOriginales.map(it => renderFilaItem(it))}
+            {itemsAdicionales.length > 0 && (
+              <tr>
+                <td colSpan={3} style={{ paddingTop: 14, paddingBottom: 6 }}>
+                  <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--amber)", fontWeight: 800 }}>
+                    Adicionales
+                  </div>
                 </td>
               </tr>
-            ))}
+            )}
+            {itemsAdicionales.map(it => renderFilaItem(it))}
           </tbody>
         </table>
       </div>
@@ -692,7 +784,29 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
               {agregando ? <Loader2 className="spin" size={15} /> : <Plus size={15} />}
             </button>
           </div>
+
+          {(pedido.estado === "tomado" || pedido.estado === "finalizado") && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+              <div className="helper-text" style={{ marginBottom: 8, textAlign: "left" }}>
+                ¿Faltó algo? Sube una foto con más códigos — el pedido vuelve a "Pendiente", bajo el subtítulo "Adicionales".
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-outline btn-sm" style={{ flex: 1 }} disabled={agregandoAdicional} onClick={() => setCamaraAdicionalAbierta(true)}>
+                  {agregandoAdicional ? <Loader2 className="spin" size={14} /> : (<><ScanLine size={13} /> Cámara</>)}
+                </button>
+                <button className="btn btn-outline btn-sm" style={{ flex: 1 }} disabled={agregandoAdicional} onClick={() => fileRefAdicional.current?.click()}>
+                  <ImageIcon size={13} /> Subir foto
+                </button>
+                <input ref={fileRefAdicional} type="file" accept="image/*" capture="environment" style={{ display: "none" }}
+                  onChange={e => { procesarArchivoAdicional(e.target.files[0]); e.target.value = ""; }} />
+              </div>
+            </div>
+          )}
         </div>
+      )}
+
+      {camaraAdicionalAbierta && (
+        <CamaraCaptura onCapturar={procesarCamaraAdicional} onCerrar={() => setCamaraAdicionalAbierta(false)} />
       )}
 
       {puedeMarcarActivo && pedido.tipo === "separar" && (
@@ -701,15 +815,59 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
             <label><Boxes size={12} style={{ verticalAlign: -2 }} /> Cantidad de cajas del pedido</label>
             <input type="number" min="1" value={cajasInput} onChange={e => setCajasInput(e.target.value)} />
           </div>
+
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label><ImageIcon size={12} style={{ verticalAlign: -2 }} /> Foto de dónde se está dejando la mercadería *</label>
+            {fotoUbicacionCapturada ? (
+              <div>
+                <img src={fotoUbicacionCapturada} alt="Ubicación de la mercadería" className="upload-preview"
+                  style={{ marginBottom: 6, cursor: "zoom-in" }} onClick={() => setFotoAmpliada(fotoUbicacionCapturada)} />
+                <button className="btn btn-outline btn-sm" onClick={() => setFotoUbicacionCapturada(null)}>Tomar otra foto</button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-outline btn-sm" style={{ flex: 1 }} onClick={() => setCamaraUbicacionAbierta(true)}>
+                  <ScanLine size={13} /> Usar cámara
+                </button>
+                <button className="btn btn-outline btn-sm" style={{ flex: 1 }} onClick={() => fileRefUbicacion.current?.click()}>
+                  <ImageIcon size={13} /> Subir foto
+                </button>
+                <input ref={fileRefUbicacion} type="file" accept="image/*" capture="environment" style={{ display: "none" }}
+                  onChange={e => { capturarFotoUbicacionArchivo(e.target.files[0]); e.target.value = ""; }} />
+              </div>
+            )}
+          </div>
+
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label>¿En qué piso o área se dejó? *</label>
+            <input type="text" placeholder="Ej: Piso 2, Zona de despacho A" value={areaUbicacion}
+              onChange={e => setAreaUbicacion(e.target.value)} />
+          </div>
+
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label>Notas del paquete (opcional)</label>
+            <textarea rows={2} placeholder="Ej: caja frágil, va con otra caja aparte, etc." value={notasPaquete}
+              onChange={e => setNotasPaquete(e.target.value)} style={{ width: "100%", resize: "vertical" }} />
+          </div>
+
           {!todosMarcados && (
             <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 10 }}>
               Marca check o equis en todos los códigos para poder finalizar.
+            </div>
+          )}
+          {todosMarcados && (!fotoUbicacionCapturada || !areaUbicacion.trim()) && (
+            <div style={{ fontSize: 11.5, color: "var(--amber)", marginBottom: 10 }}>
+              Falta la foto de la ubicación y/o el piso/área para poder finalizar.
             </div>
           )}
           <button className="btn btn-primary btn-block" disabled={!puedeFinalizarSeparar || guardando} onClick={finalizarSeparado}>
             {guardando ? <Loader2 className="spin" size={15} /> : "Finalizar pedido"}
           </button>
         </div>
+      )}
+
+      {camaraUbicacionAbierta && (
+        <CamaraCaptura onCapturar={capturarFotoUbicacionCamara} onCerrar={() => setCamaraUbicacionAbierta(false)} />
       )}
 
       {puedeMarcarActivo && pedido.tipo === "confirmar" && (
@@ -739,6 +897,22 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           <button className="btn btn-teal btn-block" onClick={() => descargarEtiquetas(pedido)}>
             <Download size={15} /> Descargar etiquetas para las cajas
           </button>
+        </div>
+      )}
+
+      {pedido.estado === "finalizado" && pedido.tipo !== "confirmar" && (pedido.fotoUbicacion || pedido.areaUbicacion || pedido.notasPaquete) && (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="section-label" style={{ marginTop: 0 }}><ImageIcon size={13} /> Dónde se dejó la mercadería</div>
+          {pedido.fotoUbicacion && (
+            <img src={pedido.fotoUbicacion} alt="Ubicación de la mercadería" className="upload-preview"
+              style={{ marginBottom: 10, cursor: "zoom-in" }} onClick={() => setFotoAmpliada(pedido.fotoUbicacion)} />
+          )}
+          {pedido.areaUbicacion && (
+            <div style={{ fontSize: 13, marginBottom: 6 }}><strong>Piso/Área:</strong> {pedido.areaUbicacion}</div>
+          )}
+          {pedido.notasPaquete && (
+            <div style={{ fontSize: 13, color: "var(--muted)" }}><strong style={{ color: "var(--text)" }}>Notas:</strong> {pedido.notasPaquete}</div>
+          )}
         </div>
       )}
 
