@@ -31,7 +31,9 @@ const CAMPOS_PEDIDO = {
   chatVistoAlmacen: "chat_visto_almacen",
   fotoUbicacion: "foto_ubicacion",
   areaUbicacion: "area_ubicacion",
-  notasPaquete: "notas_paquete"
+  notasPaquete: "notas_paquete",
+  despachadoEn: "despachado_en",
+  despachadoPorNombre: "despachado_por_nombre"
 };
 
 // camelCase (lo que manda el frontend) → snake_case (columnas de Postgres).
@@ -139,10 +141,11 @@ router.post("/", async (req, res) => {
   }
 });
 
-// Listar pedidos (opcionalmente filtrados por vendedor)
+// Listar pedidos (opcionalmente filtrados por vendedor, u "ocultando"
+// el contenido de los que no son del vendedor que consulta).
 router.get("/", async (req, res) => {
   try {
-    const { vendedorId } = req.query;
+    const { vendedorId, viewerId, ocultarAjenos } = req.query;
     // La foto no se necesita en el listado (pesaría de más); solo se pide
     // cuando se consulta un pedido puntual. "tiene_foto" es una columna
     // calculada en la base de datos.
@@ -153,7 +156,7 @@ router.get("/", async (req, res) => {
         "tiene_foto, creado_en, visto_por_vendedor, visto_por_almacen, almacenero_id, " +
         "almacenero_nombre, tomado_en, cajas, finalizado_en, cancelado_en, " +
         "historial, anclado, ultimo_mensaje_en, ultimo_mensaje_autor_rol, " +
-        "chat_visto_vendedor, chat_visto_almacen"
+        "chat_visto_vendedor, chat_visto_almacen, despachado_en, despachado_por_nombre"
       )
       .order("anclado", { ascending: false })
       .order("creado_en", { ascending: false });
@@ -162,7 +165,20 @@ router.get("/", async (req, res) => {
     const { data, error } = await query;
     if (error) throw error;
 
-    res.json(data.map(aPedido));
+    let lista = data.map(aPedido);
+
+    // Un vendedor ve TODOS los pedidos (como el almacenero), pero de los
+    // que no son suyos solo se manda lo justo para mostrar el recuadro —
+    // nunca la lista de códigos ni la foto (esa ya iba fuera del listado
+    // de por sí). Así ni el propio navegador del vendedor llega a tener
+    // esos datos en memoria.
+    if (ocultarAjenos === "1" && viewerId) {
+      lista = lista.map(p => p.vendedorId === viewerId ? p : {
+        ...p, items: [], cantidadCodigos: (p.items || []).length, oculto: true
+      });
+    }
+
+    res.json(lista);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "No se pudieron listar los pedidos." });
@@ -170,11 +186,24 @@ router.get("/", async (req, res) => {
 });
 
 // Obtener un pedido puntual
+// Columnas para el refresco automático (cada pocos segundos) — a
+// propósito SIN las fotos (foto original, fotos[], foto de ubicación):
+// son las que más pesan, y no cambian solas mientras alguien tiene la
+// pantalla abierta. Traerlas de nuevo cada vez desataba un consumo de
+// transferencia de datos (egress) altísimo en Supabase.
+const COLUMNAS_LIVIANAS =
+  "id, cliente, vendedor_id, vendedor_nombre, estado, tipo, items, tiene_foto, " +
+  "creado_en, visto_por_vendedor, visto_por_almacen, almacenero_id, almacenero_nombre, " +
+  "tomado_en, cajas, finalizado_en, cancelado_en, historial, anclado, " +
+  "ultimo_mensaje_en, ultimo_mensaje_autor_rol, chat_visto_vendedor, chat_visto_almacen, " +
+  "area_ubicacion, notas_paquete, despachado_en, despachado_por_nombre";
+
 router.get("/:id", async (req, res) => {
   try {
+    const liviano = req.query.liviano === "1";
     const { data, error } = await supabase
       .from("pedidos")
-      .select("*")
+      .select(liviano ? COLUMNAS_LIVIANAS : "*")
       .eq("id", req.params.id)
       .maybeSingle();
     if (error) throw error;

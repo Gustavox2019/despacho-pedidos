@@ -44,23 +44,35 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   // solo" porque llegaba una respuesta del servidor de antes del guardado.
   const pendientesRef = useRef(0);
 
-  const cargar = useCallback(async () => {
+  const cargar = useCallback(async (liviano) => {
     try {
-      const p = await api.obtenerPedido(pedidoId);
-      pedidoRef.current = p;
+      const p = await api.obtenerPedido(pedidoId, liviano);
       // Si hay un guardado de check/detalle todavía en camino, no
       // reemplazamos lo que se ve en pantalla con esta respuesta — podría
       // ser de un momento anterior al clic que acaba de hacer la persona.
       if (pendientesRef.current === 0) {
-        setPedido(p);
-        if (p.cajas) setCajasInput(String(p.cajas));
+        // El refresco automático (liviano) no trae las fotos — pesan
+        // mucho y no cambian solas, así que se conservan las que ya
+        // teníamos cargadas de la primera vez que se abrió el pedido.
+        const combinado = liviano && pedidoRef.current
+          ? { ...p, fotos: pedidoRef.current.fotos, fotoUbicacion: pedidoRef.current.fotoUbicacion }
+          : p;
+        pedidoRef.current = combinado;
+        setPedido(combinado);
+        if (combinado.cajas) setCajasInput(String(combinado.cajas));
+      } else {
+        // Igual guardamos la referencia (sin pisar la pantalla) para que
+        // el resto de la lógica tenga el dato más reciente disponible.
+        pedidoRef.current = liviano && pedidoRef.current
+          ? { ...p, fotos: pedidoRef.current.fotos, fotoUbicacion: pedidoRef.current.fotoUbicacion }
+          : p;
       }
     } catch (e) { /* se reintenta en el próximo poll */ }
   }, [pedidoId]);
 
   useEffect(() => {
-    cargar();
-    const iv = setInterval(cargar, 6000);
+    cargar(false); // primera carga: completa, con fotos
+    const iv = setInterval(() => cargar(true), 6000); // refrescos: livianos, sin fotos
     return () => clearInterval(iv);
   }, [cargar]);
 
@@ -396,6 +408,22 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
     }
   }
 
+  // Paquetería confirma que la mercadería ya salió/fue entregada.
+  async function confirmarDespachado() {
+    const ok = window.confirm("¿Confirmas que esta mercadería ya fue despachada/entregada?");
+    if (!ok) return;
+    setGuardando(true);
+    try {
+      const actualizado = await api.actualizarPedido(pedidoId, {
+        estado: "despachado", despachadoEn: Date.now(), despachadoPorNombre: user.nombre
+      });
+      pedidoRef.current = actualizado;
+      setPedido(actualizado);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
   async function toggleAnclado() {
     const actualizado = await api.actualizarPedido(pedidoId, { anclado: !pedido.anclado });
     pedidoRef.current = actualizado;
@@ -529,6 +557,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           {pedido.estado === "tomado" && "En proceso"}
           {pedido.estado === "finalizado" && "Finalizado"}
           {pedido.estado === "cancelado" && "Cancelado"}
+          {pedido.estado === "despachado" && "Despachado"}
         </span>
       </div>
 
@@ -913,6 +942,24 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           {pedido.notasPaquete && (
             <div style={{ fontSize: 13, color: "var(--muted)" }}><strong style={{ color: "var(--text)" }}>Notas:</strong> {pedido.notasPaquete}</div>
           )}
+        </div>
+      )}
+
+      {user.rol === "paqueteria" && pedido.estado === "finalizado" && pedido.tipo === "separar" && (
+        <div className="card" style={{ marginTop: 14, textAlign: "center" }}>
+          <div className="helper-text" style={{ marginBottom: 10 }}>
+            Confirma cuando la mercadería ya haya salido / sido entregada al cliente.
+          </div>
+          <button className="btn btn-primary btn-block" disabled={guardando} onClick={confirmarDespachado}>
+            {guardando ? <Loader2 className="spin" size={15} /> : "Confirmar mercadería despachada"}
+          </button>
+        </div>
+      )}
+
+      {pedido.estado === "despachado" && (
+        <div className="banner banner-success" style={{ marginTop: 14 }}>
+          <CheckCheck size={16} />
+          <div>Despachado por {pedido.despachadoPorNombre} · {fmtFechaHora(pedido.despachadoEn)}.</div>
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Package, User, Warehouse, Loader2, AlertTriangle } from "lucide-react";
+import { Package, User, Warehouse, Loader2, AlertTriangle, Truck } from "lucide-react";
 import { api } from "../api.js";
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -90,7 +90,7 @@ export default function LoginScreen({ onLogin }) {
         {perfilPendiente ? (
           <>
             <div className="helper-text" style={{ marginBottom: 12 }}>
-              Hola, {perfilPendiente.nombre.split(" ")[0]}. Primera vez que entras — ¿eres vendedor o almacenero?
+              Hola, {perfilPendiente.nombre.split(" ")[0]}. Primera vez que entras — ¿cuál es tu rol?
             </div>
             <div className="role-pick">
               <div className={`role-opt vendedor ${rolElegido === "vendedor" ? "selected" : ""}`} onClick={() => setRolElegido("vendedor")}>
@@ -100,6 +100,10 @@ export default function LoginScreen({ onLogin }) {
               <div className={`role-opt almacenero ${rolElegido === "almacenero" ? "selected" : ""}`} onClick={() => setRolElegido("almacenero")}>
                 <Warehouse size={22} />
                 <div className="role-opt-title">Almacenero</div>
+              </div>
+              <div className={`role-opt paqueteria ${rolElegido === "paqueteria" ? "selected" : ""}`} onClick={() => setRolElegido("paqueteria")}>
+                <Truck size={22} />
+                <div className="role-opt-title">Paquetería</div>
               </div>
             </div>
             <button className="btn btn-primary btn-block" style={{ marginTop: 16 }} disabled={!rolElegido || guardandoRol} onClick={confirmarRol}>

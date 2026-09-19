@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ClipboardList, Loader2, Pin, Search, X } from "lucide-react";
+import { ClipboardList, Loader2, Pin, Search, X, Lock } from "lucide-react";
 import { fmtTime, calcularProgreso, normCode } from "../helpers.js";
 import { api } from "../api.js";
 
@@ -17,6 +17,18 @@ function valoresUnicos(pedidos, campo) {
 }
 
 const FILTROS_VACIOS = { fechaDesde: "", fechaHasta: "", cliente: "", idPedido: "", vendedor: "", almacenero: "" };
+
+function EtiquetaEstado({ estado }) {
+  return (
+    <>
+      {estado === "pendiente" && "Pendiente"}
+      {estado === "tomado" && "En proceso"}
+      {estado === "finalizado" && "Finalizado"}
+      {estado === "cancelado" && "Cancelado"}
+      {estado === "despachado" && "Despachado"}
+    </>
+  );
+}
 
 function FiltrosPedidos({ pedidos, filtros, setFiltros, mostrarFecha, mostrarFiltroVendedor, mostrarFiltroAlmacenero }) {
   const vendedores = useMemo(() => valoresUnicos(pedidos, "vendedorNombre"), [pedidos]);
@@ -66,18 +78,26 @@ function aplicarFiltros(lista, filtros, mostrarFecha) {
   return out;
 }
 
+function tabInicial(rol) {
+  if (rol === "almacenero") return "pendientes";
+  if (rol === "paqueteria") return "por-despachar";
+  return "mis-pedidos"; // vendedor
+}
+
 export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoActualizado }) {
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
-  const [tab, setTab] = useState(user.rol === "vendedor" ? "mis-pedidos" : "pendientes");
+  const [tab, setTab] = useState(tabInicial(user.rol));
   const [buscarCodigo, setBuscarCodigo] = useState("");
 
-  const mostrarFecha = tab !== "pendientes";
+  const mostrarFecha = tab !== "pendientes" && tab !== "por-despachar";
   const mostrarFiltroAlmacenero = tab === "todos";
 
   // Buscador por código: mientras haya texto acá, se ignoran las pestañas
   // y filtros normales — busca en TODOS los pedidos (los que tenga
   // cargados este usuario) cuáles tienen ese código, sirve para ubicar en
-  // qué pedidos quedó un producto que llegó mal o dañado.
+  // qué pedidos quedó un producto que llegó mal o dañado. Los pedidos
+  // ajenos (vendedor viendo pedidos de otros) no traen códigos, así que
+  // quedan fuera de la búsqueda automáticamente.
   const resultadosBusqueda = useMemo(() => {
     const q = normCode(buscarCodigo);
     if (!q || q.length < 2) return null;
@@ -96,6 +116,8 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
     if (tab === "mis-pedidos") lista = lista.filter(p => p.vendedorId === user.id);
     else if (tab === "pendientes") lista = lista.filter(p => p.estado === "pendiente");
     else if (tab === "mis-tomados") lista = lista.filter(p => p.almaceneroId === user.id && p.estado !== "pendiente");
+    else if (tab === "por-despachar") lista = lista.filter(p => p.estado === "finalizado" && p.tipo === "separar");
+    else if (tab === "despachados") lista = lista.filter(p => p.estado === "despachado");
     // "todos": sin filtro adicional
 
     lista = aplicarFiltros(lista, filtros, mostrarFecha);
@@ -156,32 +178,41 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
                     ))}
                   </div>
                 </div>
-                <span className={`status-pill status-${p.estado}`}>
-                  {p.estado === "pendiente" && "Pendiente"}
-                  {p.estado === "tomado" && "En proceso"}
-                  {p.estado === "finalizado" && "Finalizado"}
-                  {p.estado === "cancelado" && "Cancelado"}
-                </span>
+                <span className={`status-pill status-${p.estado}`}><EtiquetaEstado estado={p.estado} /></span>
               </div>
             ))}
           </div>
         )
       ) : (
         <>
-          {user.rol !== "vendedor" && (
-            <div className="tabs">
-              <button className={`tab-btn ${tab === "pendientes" ? "active" : ""}`} onClick={() => setTab("pendientes")}>Pendientes</button>
-              <button className={`tab-btn ${tab === "mis-tomados" ? "active" : ""}`} onClick={() => setTab("mis-tomados")}>Tomados por mí</button>
-              <button className={`tab-btn ${tab === "todos" ? "active" : ""}`} onClick={() => setTab("todos")}>Todos</button>
-            </div>
-          )}
+          <div className="tabs">
+            {user.rol === "almacenero" && (
+              <>
+                <button className={`tab-btn ${tab === "pendientes" ? "active" : ""}`} onClick={() => setTab("pendientes")}>Pendientes</button>
+                <button className={`tab-btn ${tab === "mis-tomados" ? "active" : ""}`} onClick={() => setTab("mis-tomados")}>Tomados por mí</button>
+                <button className={`tab-btn ${tab === "todos" ? "active" : ""}`} onClick={() => setTab("todos")}>Todos</button>
+              </>
+            )}
+            {user.rol === "vendedor" && (
+              <>
+                <button className={`tab-btn ${tab === "mis-pedidos" ? "active" : ""}`} onClick={() => setTab("mis-pedidos")}>Mis pedidos</button>
+                <button className={`tab-btn ${tab === "todos" ? "active" : ""}`} onClick={() => setTab("todos")}>Todos</button>
+              </>
+            )}
+            {user.rol === "paqueteria" && (
+              <>
+                <button className={`tab-btn ${tab === "por-despachar" ? "active" : ""}`} onClick={() => setTab("por-despachar")}>Por despachar</button>
+                <button className={`tab-btn ${tab === "despachados" ? "active" : ""}`} onClick={() => setTab("despachados")}>Despachados</button>
+              </>
+            )}
+          </div>
 
           <FiltrosPedidos
             pedidos={pedidos}
             filtros={filtros}
             setFiltros={setFiltros}
             mostrarFecha={mostrarFecha}
-            mostrarFiltroVendedor={user.rol !== "vendedor" && tab !== "mis-pedidos"}
+            mostrarFiltroVendedor={user.rol === "almacenero" && tab !== "mis-pedidos"}
             mostrarFiltroAlmacenero={mostrarFiltroAlmacenero}
           />
 
@@ -194,6 +225,23 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
             </div>
           ) : (
             filtrados.map(p => {
+              // Pedido de otro vendedor: el backend ya lo manda "vacío" de
+              // contenido (sin códigos ni foto) — acá además se bloquea el
+              // click y se esconde cualquier dato de lo que contiene.
+              if (p.oculto) {
+                return (
+                  <div className="pedido-row pedido-oculto" key={p.id}>
+                    <Lock size={15} style={{ color: "var(--muted2)", flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="pedido-id">{p.id}</div>
+                      <div className="pedido-cliente">{p.cliente}</div>
+                      <div className="pedido-meta">{fmtTime(p.creadoEn)} · V: {p.vendedorNombre}</div>
+                    </div>
+                    <span className={`status-pill status-${p.estado}`}><EtiquetaEstado estado={p.estado} /></span>
+                  </div>
+                );
+              }
+
               const notifFinalizado = p.vendedorId === user.id && p.estado === "finalizado" && !p.vistoPorVendedor;
               const notifPedidoNuevo = user.rol === "almacenero" && p.estado === "pendiente" && !p.vistoPorAlmacen;
               const notifChat = user.rol === "vendedor" ? (p.vendedorId === user.id && !p.chatVistoVendedor) : (p.almaceneroId === user.id && !p.chatVistoAlmacen);
@@ -214,6 +262,7 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
                     <div className="pedido-meta">
                       {p.items.length} códigos · {fmtTime(p.creadoEn)}
                       {p.estado === "finalizado" && p.finalizadoEn && ` · Finalizado ${fmtTime(p.finalizadoEn)}`}
+                      {p.estado === "despachado" && p.despachadoEn && ` · Despachado ${fmtTime(p.despachadoEn)}`}
                       {p.estado === "cancelado" && p.canceladoEn && ` · Cancelado ${fmtTime(p.canceladoEn)}`}
                       {p.historial && p.historial.length > 0 && (
                         <span style={{ color: "var(--amber)" }}> · con historial</span>
@@ -237,14 +286,10 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
                     <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                       <span className="name-chip vendedor">V: {p.vendedorNombre}</span>
                       {p.almaceneroNombre && <span className="name-chip almacenero">A: {p.almaceneroNombre}</span>}
+                      {p.despachadoPorNombre && <span className="name-chip paqueteria">P: {p.despachadoPorNombre}</span>}
                     </div>
                   </div>
-                  <span className={`status-pill status-${p.estado}`}>
-                    {p.estado === "pendiente" && "Pendiente"}
-                    {p.estado === "tomado" && "En proceso"}
-                    {p.estado === "finalizado" && "Finalizado"}
-                    {p.estado === "cancelado" && "Cancelado"}
-                  </span>
+                  <span className={`status-pill status-${p.estado}`}><EtiquetaEstado estado={p.estado} /></span>
                 </div>
               );
             })

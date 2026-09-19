@@ -131,11 +131,11 @@ export default function App() {
 
   const cargarPedidos = useCallback(async () => {
     try {
-      // Un vendedor solo debe recibir SUS propios pedidos — se filtra ya
-      // en el backend, no solo se esconde en la pantalla, para que ni
-      // siquiera le lleguen al navegador los pedidos de otros vendedores.
-      const vendedorId = user?.rol === "vendedor" ? user.id : undefined;
-      const lista = await api.listarPedidos(vendedorId);
+      // El vendedor ahora ve TODOS los pedidos (como el almacenero), pero
+      // los que no son suyos le llegan "vacíos" de contenido — el backend
+      // ya se encarga de no mandar los códigos ni la foto de esos.
+      const opciones = user?.rol === "vendedor" ? { viewerId: user.id, ocultarAjenos: true } : {};
+      const lista = await api.listarPedidos(opciones);
       setPedidos(lista);
     } catch (e) { /* se reintenta en el próximo poll */ }
     setCargandoPedidos(false);
@@ -227,8 +227,16 @@ export default function App() {
           )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
             <div>
-              <div className="page-title">{user.rol === "vendedor" ? `Hola, ${user.nombre.split(" ")[0]}` : "Pedidos por despachar"}</div>
-              <div className="page-sub">Todas las listas enviadas — cualquiera puede tomar y despachar un pedido.</div>
+              <div className="page-title">
+                {user.rol === "vendedor" ? `Hola, ${user.nombre.split(" ")[0]}`
+                  : user.rol === "paqueteria" ? "Pedidos por despachar"
+                  : "Pedidos por despachar"}
+              </div>
+              <div className="page-sub">
+                {user.rol === "paqueteria"
+                  ? "Confirma cuando la mercadería ya haya sido entregada."
+                  : "Todas las listas enviadas — cualquiera puede tomar y despachar un pedido."}
+              </div>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }} onClick={() => setVista("estadisticas")}>

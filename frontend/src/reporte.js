@@ -20,7 +20,7 @@ const ENCABEZADO = [
 function construirFilas(pedidos, filtro = {}) {
   const { fechaDesde, fechaHasta, cliente } = filtro;
 
-  let finalizados = pedidos.filter(p => p.estado === "finalizado");
+  let finalizados = pedidos.filter(p => p.estado === "finalizado" || p.estado === "despachado");
 
   if (fechaDesde || fechaHasta) {
     finalizados = finalizados.filter(p => {

@@ -14,8 +14,15 @@ async function request(path, options = {}) {
 
 export const api = {
   crearPedido: (payload) => request("/pedidos", { method: "POST", body: JSON.stringify(payload) }),
-  listarPedidos: (vendedorId) => request("/pedidos" + (vendedorId ? `?vendedorId=${encodeURIComponent(vendedorId)}` : "")),
-  obtenerPedido: (id) => request(`/pedidos/${id}`),
+  listarPedidos: (opciones = {}) => {
+    const params = new URLSearchParams();
+    if (opciones.vendedorId) params.set("vendedorId", opciones.vendedorId);
+    if (opciones.viewerId) params.set("viewerId", opciones.viewerId);
+    if (opciones.ocultarAjenos) params.set("ocultarAjenos", "1");
+    const qs = params.toString();
+    return request("/pedidos" + (qs ? `?${qs}` : ""));
+  },
+  obtenerPedido: (id, liviano) => request(`/pedidos/${id}${liviano ? "?liviano=1" : ""}`),
   actualizarPedido: (id, patch) => request(`/pedidos/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   listarChat: (pedidoId, solicitanteId) => request(`/chat/${pedidoId}?solicitanteId=${encodeURIComponent(solicitanteId)}`),
   enviarChat: (pedidoId, msg) => request(`/chat/${pedidoId}`, { method: "POST", body: JSON.stringify(msg) }),

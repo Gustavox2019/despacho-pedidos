@@ -6,7 +6,7 @@ const COLORES = ["#f2a93b", "#3fc6c1", "#3ecf7e", "#ef5b5b", "#8b96a8", "#c17fe0
 
 export default function EstadisticasPanel({ pedidos }) {
   const datos = useMemo(() => {
-    const finalizados = pedidos.filter(p => p.estado === "finalizado" && p.almaceneroNombre);
+    const finalizados = pedidos.filter(p => (p.estado === "finalizado" || p.estado === "despachado") && p.almaceneroNombre);
     const conteo = new Map();
     for (const p of finalizados) {
       conteo.set(p.almaceneroNombre, (conteo.get(p.almaceneroNombre) || 0) + 1);

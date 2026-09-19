@@ -50,7 +50,7 @@ router.post("/google", async (req, res) => {
 router.post("/rol", async (req, res) => {
   try {
     const { id, nombre, correo, rol } = req.body;
-    if (!id || !rol || !["vendedor", "almacenero"].includes(rol)) {
+    if (!id || !rol || !["vendedor", "almacenero", "paqueteria"].includes(rol)) {
       return res.status(400).json({ error: "Datos inválidos." });
     }
     const { error } = await supabase

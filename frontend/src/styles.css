@@ -41,6 +41,7 @@ body { background:#12151b; }
   }
   .role-badge.vendedor{ color:var(--teal); border-color:var(--teal-dim); background:rgba(63,198,193,0.08); }
   .role-badge.almacenero{ color:var(--amber); border-color:var(--amber-dim); background:rgba(242,169,59,0.08); }
+  .role-badge.paqueteria{ color:#8b7bd8; border-color:#8b7bd855; background:rgba(139,123,216,0.10); }
   .icon-btn{
     background:transparent; border:1px solid var(--border); color:var(--muted);
     width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center;
@@ -115,15 +116,16 @@ body { background:#12151b; }
   .perforation{
     border-top:1px dashed var(--border); margin:16px 0; position:relative;
   }
-  .role-pick{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:6px; }
+  .role-pick{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:6px; }
   .role-opt{
     border:1.5px solid var(--border); background:var(--surface2); border-radius:12px;
-    padding:16px 10px; text-align:center; cursor:pointer; transition:all .15s; color:var(--muted);
+    padding:14px 6px; text-align:center; cursor:pointer; transition:all .15s; color:var(--muted);
   }
   .role-opt.selected.vendedor{ border-color:var(--teal); background:rgba(63,198,193,0.10); color:var(--teal); }
   .role-opt.selected.almacenero{ border-color:var(--amber); background:rgba(242,169,59,0.10); color:var(--amber); }
+  .role-opt.selected.paqueteria{ border-color:#8b7bd8; background:rgba(139,123,216,0.10); color:#8b7bd8; }
   .role-opt svg{ margin-bottom:6px; }
-  .role-opt-title{ font-weight:800; font-size:12.5px; text-transform:uppercase; letter-spacing:0.05em; }
+  .role-opt-title{ font-weight:800; font-size:11.5px; text-transform:uppercase; letter-spacing:0.04em; }
   .google-btn{
     display:flex; align-items:center; justify-content:center; gap:10px; width:100%;
     background:#fff; color:#3c4043; border-radius:9px; padding:11px; font-weight:600; font-size:14px;
@@ -151,6 +153,7 @@ body { background:#12151b; }
   .status-tomado{ color:var(--teal); border-color:var(--teal-dim); background:rgba(63,198,193,0.10); }
   .status-finalizado{ color:var(--green); border-color:var(--green-dim); background:rgba(62,207,126,0.10); }
   .status-cancelado{ color:var(--red); border-color:var(--red-dim); background:rgba(239,91,91,0.10); }
+  .status-despachado{ color:#8b7bd8; border-color:#8b7bd855; background:rgba(139,123,216,0.10); }
 
   /* --- Barra de progreso del pedido --- */
   .progreso-wrap{ display:flex; align-items:center; gap:8px; margin-top:8px; }
@@ -224,6 +227,9 @@ body { background:#12151b; }
   }
   .name-chip.vendedor{ color:var(--teal); border-color:var(--teal-dim); background:rgba(63,198,193,0.08); }
   .name-chip.almacenero{ color:var(--amber); border-color:var(--amber-dim); background:rgba(242,169,59,0.08); }
+  .name-chip.paqueteria{ color:#8b7bd8; border-color:#8b7bd855; background:rgba(139,123,216,0.08); }
+  .pedido-oculto{ opacity:0.6; cursor:default; gap:10px; }
+  .pedido-oculto:hover{ border-color:var(--border); }
   .tabs{ display:flex; gap:6px; margin-bottom:14px; border-bottom:1px solid var(--border); }
   .tab-btn{
     background:none; border:none; color:var(--muted); font-size:13px; font-weight:700;

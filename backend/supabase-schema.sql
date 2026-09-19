@@ -150,3 +150,20 @@ create index if not exists idx_push_subscriptions_rol on push_subscriptions (rol
 alter table pedidos add column if not exists foto_ubicacion text;
 alter table pedidos add column if not exists area_ubicacion text;
 alter table pedidos add column if not exists notas_paquete text;
+
+-- ============================================================
+-- MIGRACIÓN: rol "paquetería" y estado "despachado"
+-- ============================================================
+-- Nuevo rol, además de vendedor/almacenero — confirma que la mercadería
+-- ya salió/fue entregada.
+alter table usuarios drop constraint if exists usuarios_rol_check;
+alter table usuarios add constraint usuarios_rol_check
+  check (rol in ('vendedor', 'almacenero', 'paqueteria'));
+
+-- Nuevo estado final, después de "finalizado" — lo pone paquetería.
+alter table pedidos drop constraint if exists pedidos_estado_check;
+alter table pedidos add constraint pedidos_estado_check
+  check (estado in ('pendiente', 'tomado', 'finalizado', 'cancelado', 'despachado'));
+
+alter table pedidos add column if not exists despachado_en bigint;
+alter table pedidos add column if not exists despachado_por_nombre text;
