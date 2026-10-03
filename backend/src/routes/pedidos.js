@@ -168,13 +168,20 @@ router.get("/", async (req, res) => {
     let lista = data.map(aPedido);
 
     // Un vendedor ve TODOS los pedidos (como el almacenero), pero de los
-    // que no son suyos solo se manda lo justo para mostrar el recuadro —
-    // nunca la lista de códigos ni la foto (esa ya iba fuera del listado
-    // de por sí). Así ni el propio navegador del vendedor llega a tener
-    // esos datos en memoria.
+    // que no son suyos solo se manda lo justo para mostrar el recuadro
+    // bloqueado — nunca la lista de códigos ni la foto. Se recorta a
+    // propósito a solo estos campos (no ".../*p*/...") para que este
+    // refresco automático (cada pocos segundos, para todos los
+    // vendedores) pese lo menos posible — es la consulta que más se
+    // repite de toda la app.
     if (ocultarAjenos === "1" && viewerId) {
-      lista = lista.map(p => p.vendedorId === viewerId ? p : {
-        ...p, items: [], cantidadCodigos: (p.items || []).length, oculto: true
+      lista = lista.map(p => {
+        if (p.vendedorId === viewerId) return p;
+        return {
+          id: p.id, cliente: p.cliente, vendedorId: p.vendedorId, vendedorNombre: p.vendedorNombre,
+          estado: p.estado, creadoEn: p.creadoEn, anclado: p.anclado,
+          cantidadCodigos: (p.items || []).length, items: [], oculto: true
+        };
       });
     }
 

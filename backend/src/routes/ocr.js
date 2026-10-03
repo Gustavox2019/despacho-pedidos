@@ -1,10 +1,8 @@
 import { Router } from "express";
-import "dotenv/config";
 import { matchCode } from "../matching.js";
+import { llamarGemini } from "../geminiClient.js";
 
 const router = Router();
-
-const GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 const PROMPT = `Eres un asistente que transcribe listas de pedidos de repuestos para un almacén.
 La imagen puede ser: (a) una lista escrita a mano con lapicero, o (b) una captura de pantalla de celdas de Excel.
@@ -22,47 +20,21 @@ router.post("/", async (req, res) => {
   try {
     const { imageBase64, mediaType } = req.body;
     if (!imageBase64) return res.status(400).json({ error: "Falta la imagen." });
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({ error: "Falta configurar GEMINI_API_KEY en el archivo .env del backend." });
-    }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`;
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { inline_data: { mime_type: mediaType || "image/jpeg", data: imageBase64 } },
-            { text: PROMPT }
-          ]
-        }],
-        generationConfig: {
-          responseMimeType: "application/json"
-        }
-      })
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      console.error("Error de Gemini:", data);
-      // Código 429 = se acabó la cuota gratis del día (o hay mucha demanda
-      // en ese momento) — le damos un mensaje claro en vez del genérico,
-      // para que sepa que puede usar Excel o cargar los códigos a mano
-      // mientras tanto.
-      if (response.status === 429) {
-        return res.status(429).json({
-          error: "Se llegó al límite diario de lecturas automáticas de fotos. Mientras tanto puedes subir un Excel o agregar los códigos manualmente."
-        });
-      }
-      return res.status(502).json({ error: "El servicio de transcripción no respondió correctamente." });
-    }
+    const data = await llamarGemini(() => ({
+      contents: [{
+        parts: [
+          { inline_data: { mime_type: mediaType || "image/jpeg", data: imageBase64 } },
+          { text: PROMPT }
+        ]
+      }],
+      generationConfig: { responseMimeType: "application/json" }
+    }));
 
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) return res.status(502).json({ error: "Respuesta vacía del modelo." });
 
-    let clean = text.trim().replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+    const clean = text.trim().replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
     const parsed = JSON.parse(clean);
 
     const items = (parsed.items || []).map((it, i) => {
@@ -82,7 +54,19 @@ router.post("/", async (req, res) => {
     res.json({ cliente: parsed.cliente || null, items });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "No se pudo leer la imagen automáticamente." });
+    // Código 429 = se acabó la cuota gratis del día — mensaje claro para
+    // que sepa que puede usar Excel o cargar los códigos a mano mientras tanto.
+    if (err.status === 429) {
+      return res.status(429).json({
+        error: "Se llegó al límite diario de lecturas automáticas de fotos. Mientras tanto puedes subir un Excel o agregar los códigos manualmente."
+      });
+    }
+    if (err.status === 503) {
+      return res.status(503).json({
+        error: "El servicio de lectura automática está saturado en este momento (ya se intentó varias veces). Intenta de nuevo en un minuto, o agrega los códigos manualmente."
+      });
+    }
+    res.status(502).json({ error: "No se pudo leer la imagen automáticamente." });
   }
 });
 

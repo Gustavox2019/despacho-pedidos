@@ -144,7 +144,11 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     cargarPedidos();
-    const iv = setInterval(cargarPedidos, 5000);
+    // 15s en vez de 5s: esta es la consulta que más se repite en toda la
+    // app (corre para cada persona con la pantalla abierta) — lo urgente
+    // (pedido nuevo, cambio de estado, mensaje) ya llega al instante por
+    // notificación push, así que no hace falta revisar tan seguido.
+    const iv = setInterval(cargarPedidos, 15000);
     return () => clearInterval(iv);
   }, [user, cargarPedidos]);
 
