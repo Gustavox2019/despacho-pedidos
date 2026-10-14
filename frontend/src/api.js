@@ -23,6 +23,22 @@ export const api = {
     const qs = params.toString();
     return request("/pedidos" + (qs ? `?${qs}` : ""));
   },
+  // Búsqueda en TODO el historial, por filtros y/o código — no trae el
+  // historial completo, solo lo que calza con lo que se busca.
+  buscarPedidos: (filtros = {}) => {
+    const params = new URLSearchParams();
+    if (filtros.codigo) params.set("codigo", filtros.codigo);
+    if (filtros.cliente) params.set("cliente", filtros.cliente);
+    if (filtros.idPedido) params.set("idPedido", filtros.idPedido);
+    if (filtros.vendedor) params.set("vendedor", filtros.vendedor);
+    if (filtros.almacenero) params.set("almacenero", filtros.almacenero);
+    if (filtros.fechaDesde) params.set("fechaDesde", filtros.fechaDesde);
+    if (filtros.fechaHasta) params.set("fechaHasta", filtros.fechaHasta);
+    if (filtros.estados && filtros.estados.length) params.set("estados", filtros.estados.join(","));
+    if (filtros.viewerId) params.set("viewerId", filtros.viewerId);
+    if (filtros.ocultarAjenos) params.set("ocultarAjenos", "1");
+    return request("/pedidos/buscar?" + params.toString());
+  },
   obtenerPedido: (id, liviano) => request(`/pedidos/${id}${liviano ? "?liviano=1" : ""}`),
   actualizarPedido: (id, patch) => request(`/pedidos/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   listarChat: (pedidoId, solicitanteId) => request(`/chat/${pedidoId}?solicitanteId=${encodeURIComponent(solicitanteId)}`),

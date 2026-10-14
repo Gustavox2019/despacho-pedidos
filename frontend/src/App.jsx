@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Plus, FileSpreadsheet, FileText, BarChart3, Bell, PackageX } from "lucide-react";
+import { Loader2, Plus, FileSpreadsheet, FileText, BarChart3, Bell, PackageX, Search } from "lucide-react";
 import "./styles.css";
 import { api } from "./api.js";
 import { exportarReporteCSV, exportarReporteXLSX } from "./reporte.js";
@@ -11,6 +11,7 @@ import CrearPedido from "./components/CrearPedido.jsx";
 import DetallePedido from "./components/DetallePedido.jsx";
 import EstadisticasPanel from "./components/EstadisticasPanel.jsx";
 import FaltantesPanel from "./components/FaltantesPanel.jsx";
+import BuscarPedidos from "./components/BuscarPedidos.jsx";
 
 function MenuExportar({ pedidos, onAbrir }) {
   const [abierto, setAbierto] = useState(false);
@@ -278,7 +279,11 @@ export default function App() {
                   : "Todas las listas enviadas — cualquiera puede tomar y despachar un pedido."}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 6 }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }}
+                onClick={() => setVista("buscar")}>
+                <Search size={13} /> Buscar pedidos
+              </button>
               <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }}
                 onClick={() => { setVista("estadisticas"); cargarHistorialCompleto(); }}>
                 <BarChart3 size={13} /> Estadísticas
@@ -305,6 +310,15 @@ export default function App() {
             </div>
           )}
           <ListaPedidos pedidos={pedidos} user={user} onOpen={abrirPedido} loading={cargandoPedidos} onPedidoActualizado={cargarPedidos} />
+        </div>
+      )}
+
+      {vista === "buscar" && (
+        <div className="container">
+          <button className="btn btn-outline btn-sm" style={{ marginBottom: 16 }} onClick={() => setVista("home")}>
+            ← Volver
+          </button>
+          <BuscarPedidos user={user} onOpen={abrirPedido} />
         </div>
       )}
 
