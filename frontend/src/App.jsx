@@ -98,6 +98,11 @@ export default function App() {
   // a medida que se acumula el historial.
   const [pedidosCompleto, setPedidosCompleto] = useState(null);
   const [cargandoHistorial, setCargandoHistorial] = useState(false);
+  // Solo vendedores: TODOS sus propios pedidos (también los viejos, que el
+  // refresco normal de cada 15s ya no trae). Se piden una vez al entrar y
+  // se renuevan cada tanto — son solo los pedidos de esa persona, así que
+  // pesa poco; lo reciente igual se sigue actualizando cada 15s.
+  const [misHistoricos, setMisHistoricos] = useState([]);
   const [notifPermiso, setNotifPermiso] = useState("default");
   const [mostrarAvisoNotif, setMostrarAvisoNotif] = useState(false);
 
@@ -164,6 +169,23 @@ export default function App() {
     } catch (e) { /* se puede reintentar al reabrir la pantalla */ }
     setCargandoHistorial(false);
   }, [user]);
+
+  const cargarMisHistoricos = useCallback(async () => {
+    if (!user || user.rol !== "vendedor") return;
+    try {
+      const lista = await api.listarPedidos({
+        vendedorId: user.id, viewerId: user.id, ocultarAjenos: true, completo: true
+      });
+      setMisHistoricos(lista);
+    } catch (e) { /* se reintenta en la próxima renovación */ }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || user.rol !== "vendedor") return;
+    cargarMisHistoricos();
+    const iv = setInterval(cargarMisHistoricos, 5 * 60 * 1000);
+    return () => clearInterval(iv);
+  }, [user, cargarMisHistoricos]);
 
   useEffect(() => {
     if (!user) return;
@@ -237,6 +259,14 @@ export default function App() {
     }
   }
   const cargaAlmaceneros = [...mapaAlmaceneros.entries()].sort((a, b) => b[1] - a[1]);
+  // Lista que ve el vendedor: sus pedidos históricos + lo reciente (lo
+  // reciente, que se refresca cada 15s, pisa a la copia histórica).
+  let pedidosParaLista = pedidos;
+  if (user.rol === "vendedor" && misHistoricos.length > 0) {
+    const mapa = new Map(misHistoricos.map(p => [p.id, p]));
+    for (const p of pedidos) mapa.set(p.id, p);
+    pedidosParaLista = [...mapa.values()];
+  }
   const notifChatCount = pedidos.filter(p => user.rol === "vendedor"
     ? (p.vendedorId === user.id && !p.chatVistoVendedor)
     : (p.almaceneroId === user.id && !p.chatVistoAlmacen)
@@ -309,7 +339,7 @@ export default function App() {
               ))}
             </div>
           )}
-          <ListaPedidos pedidos={pedidos} user={user} onOpen={abrirPedido} loading={cargandoPedidos} onPedidoActualizado={cargarPedidos} />
+          <ListaPedidos pedidos={pedidosParaLista} user={user} onOpen={abrirPedido} loading={cargandoPedidos} onPedidoActualizado={cargarPedidos} />
         </div>
       )}
 
