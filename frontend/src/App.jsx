@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Loader2, Plus, FileSpreadsheet, FileText, BarChart3, Bell, PackageX } from "lucide-react";
 import "./styles.css";
 import { api } from "./api.js";
@@ -225,16 +225,17 @@ export default function App() {
     : 0;
   // Carga de trabajo del almacén en este momento: cuántos pedidos tiene
   // tomados cada almacenero — se ve en la pantalla principal para saber
-  // quién tiene más encima.
-  const cargaAlmaceneros = useMemo(() => {
-    const mapa = new Map();
-    for (const p of pedidos) {
-      if (p.estado === "tomado" && p.almaceneroNombre) {
-        mapa.set(p.almaceneroNombre, (mapa.get(p.almaceneroNombre) || 0) + 1);
-      }
+  // quién tiene más encima. (Cálculo simple, no necesita useMemo — y no
+  // puede usarlo acá: los "if" de arriba ya hicieron return antes de
+  // llegar a este punto en algunos renders, así que un hook acá rompería
+  // las reglas de React.)
+  const mapaAlmaceneros = new Map();
+  for (const p of pedidos) {
+    if (p.estado === "tomado" && p.almaceneroNombre) {
+      mapaAlmaceneros.set(p.almaceneroNombre, (mapaAlmaceneros.get(p.almaceneroNombre) || 0) + 1);
     }
-    return [...mapa.entries()].sort((a, b) => b[1] - a[1]);
-  }, [pedidos]);
+  }
+  const cargaAlmaceneros = [...mapaAlmaceneros.entries()].sort((a, b) => b[1] - a[1]);
   const notifChatCount = pedidos.filter(p => user.rol === "vendedor"
     ? (p.vendedorId === user.id && !p.chatVistoVendedor)
     : (p.almaceneroId === user.id && !p.chatVistoAlmacen)
