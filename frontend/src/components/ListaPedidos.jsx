@@ -225,14 +225,19 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
           />
 
           {tab === "todos" && (
-            <label className="helper-text" style={{ display: "flex", alignItems: "center", gap: 6, margin: "2px 0 10px", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={verTodosEstados}
-                onChange={e => setVerTodosEstados(e.target.checked)}
-              />
-              Ver también finalizados y cancelados
-            </label>
+            <div style={{ margin: "2px 0 10px" }}>
+              <label className="helper-text" style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={verTodosEstados}
+                  onChange={e => setVerTodosEstados(e.target.checked)}
+                />
+                Ver también finalizados y cancelados recientes
+              </label>
+              <div className="helper-text" style={{ marginTop: 2, opacity: 0.75 }}>
+                Esta pestaña solo trae lo de los últimos días. Para pedidos más antiguos, usa "Buscar pedidos" en la pantalla principal.
+              </div>
+            </div>
           )}
 
           {loading ? (
