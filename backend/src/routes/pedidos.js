@@ -151,7 +151,7 @@ const DIAS_RECIENTES = 4;
 
 router.get("/", async (req, res) => {
   try {
-    const { vendedorId, viewerId, ocultarAjenos, completo } = req.query;
+    const { vendedorId, almaceneroId, viewerId, ocultarAjenos, completo } = req.query;
 
     // Arma la consulta desde cero (sin ejecutarla) — se usa una función en
     // vez de un query ya armado porque hay que repetirla varias veces para
@@ -173,6 +173,7 @@ router.get("/", async (req, res) => {
         .order("anclado", { ascending: false })
         .order("creado_en", { ascending: false });
       if (vendedorId) query = query.eq("vendedor_id", vendedorId);
+      if (almaceneroId) query = query.eq("almacenero_id", almaceneroId);
 
       // Sin "completo=1" (el caso normal: el refresco automático de cada
       // 15s), no se trae TODO el historial — solo lo operativamente
