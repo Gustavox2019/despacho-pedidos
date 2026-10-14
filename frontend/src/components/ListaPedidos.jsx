@@ -88,6 +88,10 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
   const [tab, setTab] = useState(tabInicial(user.rol));
   const [buscarCodigo, setBuscarCodigo] = useState("");
+  // En la pestaña "Todos", por defecto solo se ve lo activo (pendiente o en
+  // proceso). Este switch deja ver TODO, incluyendo finalizados y
+  // cancelados, cuando el usuario lo necesite.
+  const [verTodosEstados, setVerTodosEstados] = useState(false);
 
   const mostrarFecha = tab !== "pendientes" && tab !== "por-despachar";
   const mostrarFiltroAlmacenero = tab === "todos";
@@ -120,12 +124,13 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
     else if (tab === "despachados") lista = lista.filter(p => p.estado === "despachado");
     // "todos": por defecto solo lo que sigue activo (pendiente o en
     // proceso) — ni finalizados ni cancelados, para no mezclar el
-    // historial viejo con lo que todavía hay que atender.
-    else if (tab === "todos") lista = lista.filter(p => p.estado === "pendiente" || p.estado === "tomado");
+    // historial viejo con lo que todavía hay que atender. El switch
+    // "verTodosEstados" permite ver absolutamente todo cuando se necesite.
+    else if (tab === "todos" && !verTodosEstados) lista = lista.filter(p => p.estado === "pendiente" || p.estado === "tomado");
 
     lista = aplicarFiltros(lista, filtros, mostrarFecha);
     return lista.sort((a, b) => (b.anclado ? 1 : 0) - (a.anclado ? 1 : 0) || b.creadoEn - a.creadoEn);
-  }, [pedidos, filtros, tab, user.id, mostrarFecha]);
+  }, [pedidos, filtros, tab, user.id, mostrarFecha, verTodosEstados]);
 
   async function togglePin(e, pedido) {
     e.stopPropagation(); // no abrir el detalle al tocar el pin
@@ -218,6 +223,17 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
             mostrarFiltroVendedor={user.rol === "almacenero" && tab !== "mis-pedidos"}
             mostrarFiltroAlmacenero={mostrarFiltroAlmacenero}
           />
+
+          {tab === "todos" && (
+            <label className="helper-text" style={{ display: "flex", alignItems: "center", gap: 6, margin: "2px 0 10px", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={verTodosEstados}
+                onChange={e => setVerTodosEstados(e.target.checked)}
+              />
+              Ver también finalizados y cancelados
+            </label>
+          )}
 
           {loading ? (
             <div className="empty-state"><Loader2 className="spin" size={26} /></div>
