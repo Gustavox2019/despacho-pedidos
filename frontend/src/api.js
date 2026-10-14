@@ -17,6 +17,7 @@ export const api = {
   listarPedidos: (opciones = {}) => {
     const params = new URLSearchParams();
     if (opciones.vendedorId) params.set("vendedorId", opciones.vendedorId);
+    if (opciones.almaceneroId) params.set("almaceneroId", opciones.almaceneroId);
     if (opciones.viewerId) params.set("viewerId", opciones.viewerId);
     if (opciones.ocultarAjenos) params.set("ocultarAjenos", "1");
     if (opciones.completo) params.set("completo", "1");

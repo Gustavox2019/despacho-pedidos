@@ -98,10 +98,11 @@ export default function App() {
   // a medida que se acumula el historial.
   const [pedidosCompleto, setPedidosCompleto] = useState(null);
   const [cargandoHistorial, setCargandoHistorial] = useState(false);
-  // Solo vendedores: TODOS sus propios pedidos (también los viejos, que el
-  // refresco normal de cada 15s ya no trae). Se piden una vez al entrar y
-  // se renuevan cada tanto — son solo los pedidos de esa persona, así que
-  // pesa poco; lo reciente igual se sigue actualizando cada 15s.
+  // Vendedores y almaceneros: TODOS sus propios pedidos (los del vendedor,
+  // o los que tomó el almacenero), también los viejos, que el refresco
+  // normal de cada 15s ya no trae. Se piden una vez al entrar y se renuevan
+  // cada tanto — son solo los pedidos de esa persona, así que pesa poco;
+  // lo reciente igual se sigue actualizando cada 15s.
   const [misHistoricos, setMisHistoricos] = useState([]);
   const [notifPermiso, setNotifPermiso] = useState("default");
   const [mostrarAvisoNotif, setMostrarAvisoNotif] = useState(false);
@@ -171,17 +172,18 @@ export default function App() {
   }, [user]);
 
   const cargarMisHistoricos = useCallback(async () => {
-    if (!user || user.rol !== "vendedor") return;
+    if (!user || (user.rol !== "vendedor" && user.rol !== "almacenero")) return;
     try {
-      const lista = await api.listarPedidos({
-        vendedorId: user.id, viewerId: user.id, ocultarAjenos: true, completo: true
-      });
+      const opciones = user.rol === "vendedor"
+        ? { vendedorId: user.id, viewerId: user.id, ocultarAjenos: true, completo: true }
+        : { almaceneroId: user.id, completo: true };
+      const lista = await api.listarPedidos(opciones);
       setMisHistoricos(lista);
     } catch (e) { /* se reintenta en la próxima renovación */ }
   }, [user]);
 
   useEffect(() => {
-    if (!user || user.rol !== "vendedor") return;
+    if (!user || (user.rol !== "vendedor" && user.rol !== "almacenero")) return;
     cargarMisHistoricos();
     const iv = setInterval(cargarMisHistoricos, 5 * 60 * 1000);
     return () => clearInterval(iv);
@@ -259,10 +261,10 @@ export default function App() {
     }
   }
   const cargaAlmaceneros = [...mapaAlmaceneros.entries()].sort((a, b) => b[1] - a[1]);
-  // Lista que ve el vendedor: sus pedidos históricos + lo reciente (lo
+  // Lista que ve el vendedor/almacenero: sus pedidos históricos + lo reciente (lo
   // reciente, que se refresca cada 15s, pisa a la copia histórica).
   let pedidosParaLista = pedidos;
-  if (user.rol === "vendedor" && misHistoricos.length > 0) {
+  if (misHistoricos.length > 0) {
     const mapa = new Map(misHistoricos.map(p => [p.id, p]));
     for (const p of pedidos) mapa.set(p.id, p);
     pedidosParaLista = [...mapa.values()];
