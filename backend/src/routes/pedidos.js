@@ -152,38 +152,60 @@ const DIAS_RECIENTES = 4;
 router.get("/", async (req, res) => {
   try {
     const { vendedorId, viewerId, ocultarAjenos, completo } = req.query;
-    // La foto no se necesita en el listado (pesaría de más); solo se pide
-    // cuando se consulta un pedido puntual. "tiene_foto" es una columna
-    // calculada en la base de datos.
-    let query = supabase
-      .from("pedidos")
-      .select(
-        "id, cliente, vendedor_id, vendedor_nombre, estado, tipo, items, " +
-        "tiene_foto, creado_en, visto_por_vendedor, visto_por_almacen, almacenero_id, " +
-        "almacenero_nombre, tomado_en, cajas, finalizado_en, cancelado_en, " +
-        "historial, anclado, ultimo_mensaje_en, ultimo_mensaje_autor_rol, " +
-        "chat_visto_vendedor, chat_visto_almacen, despachado_en, despachado_por_nombre"
-      )
-      .order("anclado", { ascending: false })
-      .order("creado_en", { ascending: false });
-    if (vendedorId) query = query.eq("vendedor_id", vendedorId);
 
-    // Sin "completo=1" (el caso normal: el refresco automático de cada
-    // 15s), no se trae TODO el historial — solo lo operativamente
-    // relevante: pedidos todavía pendientes/en proceso, lo cerrado hace
-    // pocos días, y lo anclado (fijado). El historial completo (para
-    // Estadísticas, Faltantes y Exportar) se pide aparte, solo cuando se
-    // abren esas pantallas — así el poll de todo el día no carga cada vez
-    // más pesado a medida que se acumulan meses de pedidos.
-    if (completo !== "1") {
-      const corte = Date.now() - DIAS_RECIENTES * 24 * 60 * 60 * 1000;
-      query = query.or(
-        `estado.in.(pendiente,tomado),anclado.eq.true,creado_en.gte.${corte}`
-      );
+    // Arma la consulta desde cero (sin ejecutarla) — se usa una función en
+    // vez de un query ya armado porque hay que repetirla varias veces para
+    // traer la info en bloques (ver más abajo), y un query de supabase-js
+    // no se puede "reusar" dos veces una vez que ya se le pidió un rango.
+    function construirQuery() {
+      // La foto no se necesita en el listado (pesaría de más); solo se pide
+      // cuando se consulta un pedido puntual. "tiene_foto" es una columna
+      // calculada en la base de datos.
+      let query = supabase
+        .from("pedidos")
+        .select(
+          "id, cliente, vendedor_id, vendedor_nombre, estado, tipo, items, " +
+          "tiene_foto, creado_en, visto_por_vendedor, visto_por_almacen, almacenero_id, " +
+          "almacenero_nombre, tomado_en, cajas, finalizado_en, cancelado_en, " +
+          "historial, anclado, ultimo_mensaje_en, ultimo_mensaje_autor_rol, " +
+          "chat_visto_vendedor, chat_visto_almacen, despachado_en, despachado_por_nombre"
+        )
+        .order("anclado", { ascending: false })
+        .order("creado_en", { ascending: false });
+      if (vendedorId) query = query.eq("vendedor_id", vendedorId);
+
+      // Sin "completo=1" (el caso normal: el refresco automático de cada
+      // 15s), no se trae TODO el historial — solo lo operativamente
+      // relevante: pedidos todavía pendientes/en proceso, lo cerrado hace
+      // pocos días, y lo anclado (fijado). El historial completo (para
+      // Estadísticas, Faltantes y Exportar) se pide aparte, solo cuando se
+      // abren esas pantallas — así el poll de todo el día no carga cada vez
+      // más pesado a medida que se acumulan meses de pedidos.
+      if (completo !== "1") {
+        const corte = Date.now() - DIAS_RECIENTES * 24 * 60 * 60 * 1000;
+        query = query.or(
+          `estado.in.(pendiente,tomado),anclado.eq.true,creado_en.gte.${corte}`
+        );
+      }
+      return query;
     }
 
-    const { data, error } = await query;
-    if (error) throw error;
+    // Supabase/PostgREST solo devuelve hasta 1000 filas por consulta (es el
+    // límite por defecto del proyecto), así que con meses de pedidos
+    // acumulados el historial completo lo supera fácilmente y se quedaba
+    // cortando justo los pedidos más antiguos sin avisar. Acá se trae en
+    // bloques de 1000 hasta agotar los resultados, para que "Todos" con el
+    // filtro apagado realmente traiga TODO el historial.
+    const TAM_BLOQUE = 1000;
+    let data = [];
+    let desde = 0;
+    while (true) {
+      const { data: bloque, error } = await construirQuery().range(desde, desde + TAM_BLOQUE - 1);
+      if (error) throw error;
+      data = data.concat(bloque || []);
+      if (!bloque || bloque.length < TAM_BLOQUE) break;
+      desde += TAM_BLOQUE;
+    }
 
     let lista = data.map(aPedido);
 
@@ -209,6 +231,62 @@ router.get("/", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "No se pudieron listar los pedidos." });
+  }
+});
+
+// Buscar pedidos en TODO el historial por filtros y/o código — a
+// diferencia del listado normal (de arriba), esto NO trae nunca el
+// historial completo: la búsqueda se hace directo en la base de datos
+// (función "buscar_pedidos" en Supabase) y solo viaja al navegador lo
+// que calza con los filtros. Así se puede ubicar un pedido viejo sin
+// gastar de más el ancho de banda (egress) de Supabase.
+// IMPORTANTE: esta ruta debe ir ANTES de "/:id" — si no, Express
+// entendería "buscar" como si fuera un id de pedido.
+router.get("/buscar", async (req, res) => {
+  try {
+    const {
+      codigo, cliente, idPedido, vendedor, almacenero,
+      fechaDesde, fechaHasta, estados,
+      viewerId, ocultarAjenos
+    } = req.query;
+
+    const sinFiltro = !codigo && !cliente && !idPedido && !vendedor && !almacenero && !fechaDesde && !fechaHasta;
+    if (sinFiltro) {
+      return res.status(400).json({ error: "Aplica al menos un filtro para buscar." });
+    }
+
+    const { data, error } = await supabase.rpc("buscar_pedidos", {
+      patron_codigo: codigo || null,
+      patron_cliente: cliente || null,
+      patron_id: idPedido || null,
+      patron_vendedor: vendedor || null,
+      patron_almacenero: almacenero || null,
+      desde_ms: fechaDesde ? new Date(`${fechaDesde}T00:00:00`).getTime() : null,
+      hasta_ms: fechaHasta ? new Date(`${fechaHasta}T23:59:59.999`).getTime() : null,
+      estados: estados ? estados.split(",") : null,
+      limite: 300
+    });
+    if (error) throw error;
+
+    let lista = (data || []).map(aPedido);
+
+    // Mismo recorte que en el listado normal: un vendedor no ve el
+    // contenido de pedidos que no son suyos.
+    if (ocultarAjenos === "1" && viewerId) {
+      lista = lista.map(p => {
+        if (p.vendedorId === viewerId) return p;
+        return {
+          id: p.id, cliente: p.cliente, vendedorId: p.vendedorId, vendedorNombre: p.vendedorNombre,
+          estado: p.estado, creadoEn: p.creadoEn, anclado: p.anclado,
+          cantidadCodigos: (p.items || []).length, items: [], oculto: true
+        };
+      });
+    }
+
+    res.json(lista);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "No se pudo buscar. Si acabas de agregar esta función, revisa que corriste el nuevo bloque del SQL en Supabase." });
   }
 });
 
