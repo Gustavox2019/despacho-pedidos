@@ -19,6 +19,7 @@ export const api = {
     if (opciones.vendedorId) params.set("vendedorId", opciones.vendedorId);
     if (opciones.viewerId) params.set("viewerId", opciones.viewerId);
     if (opciones.ocultarAjenos) params.set("ocultarAjenos", "1");
+    if (opciones.completo) params.set("completo", "1");
     const qs = params.toString();
     return request("/pedidos" + (qs ? `?${qs}` : ""));
   },

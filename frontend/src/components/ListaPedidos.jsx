@@ -118,7 +118,10 @@ export default function ListaPedidos({ pedidos, user, onOpen, loading, onPedidoA
     else if (tab === "mis-tomados") lista = lista.filter(p => p.almaceneroId === user.id && p.estado !== "pendiente");
     else if (tab === "por-despachar") lista = lista.filter(p => p.estado === "finalizado" && p.tipo === "separar");
     else if (tab === "despachados") lista = lista.filter(p => p.estado === "despachado");
-    // "todos": sin filtro adicional
+    // "todos": por defecto solo lo que sigue activo (pendiente o en
+    // proceso) — ni finalizados ni cancelados, para no mezclar el
+    // historial viejo con lo que todavía hay que atender.
+    else if (tab === "todos") lista = lista.filter(p => p.estado === "pendiente" || p.estado === "tomado");
 
     lista = aplicarFiltros(lista, filtros, mostrarFecha);
     return lista.sort((a, b) => (b.anclado ? 1 : 0) - (a.anclado ? 1 : 0) || b.creadoEn - a.creadoEn);

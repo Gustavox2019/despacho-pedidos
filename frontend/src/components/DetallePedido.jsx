@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, CheckCheck, ClipboardList, CheckCircle2, XCircle,
-  Boxes, Download, MessageSquare, ChevronLeft, PackageCheck, Plus, Image as ImageIcon, Layers,
-  History, Pin, Ban, Undo2, ScanLine, AlertTriangle, FileSpreadsheet, Ticket
+  Boxes, MessageSquare, ChevronLeft, PackageCheck, Plus, Image as ImageIcon, Layers,
+  History, Pin, Ban, Undo2, ScanLine, AlertTriangle, FileSpreadsheet, Ticket, X
 } from "lucide-react";
 import { fmtTime, fmtFechaHora, uid, calcularProgreso, normCode, resizeImageToBase64 } from "../helpers.js";
 import { api } from "../api.js";
-import { descargarEtiquetas } from "../etiquetas.js";
 import { exportarPedidoXLSX } from "../reporte.js";
+import { parsearExcel } from "../excelParser.js";
 import ChatPanel from "./ChatPanel.jsx";
 import CodigoInput from "./CodigoInput.jsx";
 import CamaraCaptura from "./CamaraCaptura.jsx";
@@ -29,7 +29,9 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   const [agregando, setAgregando] = useState(false);
   const [agregandoAdicional, setAgregandoAdicional] = useState(false);
   const [camaraAdicionalAbierta, setCamaraAdicionalAbierta] = useState(false);
+  const [arrastrandoAdicional, setArrastrandoAdicional] = useState(false);
   const fileRefAdicional = useRef(null);
+  const fileRefAdicionalExcel = useRef(null);
   const [fotoAmpliada, setFotoAmpliada] = useState(null);
   const [escaneando, setEscaneando] = useState(false);
   const [resultadoEscaneo, setResultadoEscaneo] = useState(null); // { tipo, codigoLeido, item }
@@ -151,6 +153,17 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
 
     setPedido({ ...pedido, ...cambios });
     guardarEnSegundoPlano(cambios);
+  }
+
+  // Escribir un detalle en un código YA cuenta como la advertencia — no
+  // hace falta además apretar check o X: en cuanto hay texto, el código
+  // queda marcado automáticamente como "con problema" (igual que ya se ve
+  // en la vista del vendedor), y en la fila se reemplazan los botones de
+  // check/X por el ícono de advertencia.
+  function handleDetalleChange(it, valor) {
+    const patch = { texto: valor };
+    if (valor.trim()) patch.check = "no";
+    updateItemCheck(it.id, patch);
   }
 
   // Toma el código leído (venga de una foto subida, o de la cámara en
@@ -285,6 +298,72 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   function procesarCamaraAdicional(base64) {
     setCamaraAdicionalAbierta(false);
     agregarAdicionalesDesdeFoto(base64);
+  }
+
+  // Igual que agregarAdicionalesDesdeFoto, pero a partir de una hoja de
+  // cálculo (Excel/CSV) — se contrasta contra el catálogo igual que al
+  // crear el pedido, y los códigos entran marcados como "adicional".
+  async function agregarAdicionalesDesdeExcel(file) {
+    if (!file) return;
+    setAgregandoAdicional(true);
+    try {
+      const filas = await parsearExcel(file);
+      if (filas.length === 0) {
+        setResultadoEscaneo({ tipo: "no_leido" });
+        return;
+      }
+      const resultado = await api.matchLista(filas);
+      const nuevos = (resultado.items || []).map(it => ({
+        id: it.id || uid("it"),
+        cantidad: Number(it.cantidad) || 1,
+        codigo: it.codigo,
+        codigosAlternos: it.codigosAlternos || [],
+        piso: "",
+        fotoId: null,
+        check: null,
+        texto: "",
+        adicional: true
+      }));
+      if (nuevos.length === 0) {
+        setResultadoEscaneo({ tipo: "no_leido" });
+        return;
+      }
+      const nuevosItems = [...pedido.items, ...nuevos];
+      const entrada = {
+        id: uid("h"), ts: Date.now(), autor: user.nombre,
+        descripcion: `Agregó ${nuevos.length} código(s) adicionales por Excel — el pedido volvió a pendiente`
+      };
+      const actualizado = await api.actualizarPedido(pedidoId, {
+        items: nuevosItems,
+        estado: "pendiente",
+        almaceneroId: null,
+        almaceneroNombre: null,
+        tomadoEn: null,
+        vistoPorAlmacen: false,
+        historial: [...(pedido.historial || []), entrada]
+      });
+      pedidoRef.current = actualizado;
+      setPedido(actualizado);
+    } catch (err) {
+      console.error("No se pudieron agregar los adicionales desde Excel:", err);
+      setResultadoEscaneo({ tipo: "error", mensaje: err.message || "No se pudo leer el archivo." });
+    } finally {
+      setAgregandoAdicional(false);
+    }
+  }
+
+  // Arrastrar y soltar un archivo (foto o Excel) sobre la zona de
+  // "adicionales" — detecta el tipo y lo manda al flujo que corresponda.
+  function manejarDropAdicional(e) {
+    e.preventDefault();
+    setArrastrandoAdicional(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    if (file.type && file.type.startsWith("image/")) {
+      procesarArchivoAdicional(file);
+    } else {
+      agregarAdicionalesDesdeExcel(file);
+    }
   }
 
   async function tomarPedido() {
@@ -444,13 +523,11 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   // historial del pedido (ver updateItemCheck / agregarProducto).
   const puedeEditarFinalizado = pedido.estado === "finalizado" && yoLoTome;
   const puedeMarcar = puedeMarcarActivo || puedeEditarFinalizado;
-  // En un pedido "confirmar" (sin armado físico de cajas) el vendedor
-  // también puede agregar códigos que se le hayan quedado afuera, incluso
-  // después de que el almacén ya lo confirmó — no hay cajas que reabrir.
-  const puedeAgregarProductoVendedor = pedido.tipo === "confirmar" && pedido.vendedorId === user.id && pedido.estado !== "cancelado";
-  const puedeAgregarProducto =
-    ((pedido.estado !== "finalizado" && pedido.estado !== "cancelado") || puedeEditarFinalizado) ||
-    puedeAgregarProductoVendedor;
+  // Agregar un producto nuevo a un pedido ya existente es exclusivo del
+  // vendedor dueño del pedido (el almacenero ya no puede hacerlo) — se
+  // puede hacer en cualquier momento mientras el pedido no esté cancelado,
+  // incluso después de finalizado (queda anotado en el historial).
+  const puedeAgregarProducto = user.rol === "vendedor" && pedido.vendedorId === user.id && pedido.estado !== "cancelado";
   // Cualquier edición (agregar código, marcar check) hecha una vez que el
   // pedido ya está finalizado queda anotada en el historial, sin importar
   // si la hizo el almacenero que lo separó o el vendedor en uno "confirmar".
@@ -470,37 +547,80 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
   const itemsOriginales = pedido.items.filter(it => !it.adicional);
   const itemsAdicionales = pedido.items.filter(it => it.adicional);
 
+  // Si el vendedor registró código(s) alterno(s) para el mismo producto,
+  // el almacenero los ve todos como opciones y puede marcar cuál de ellos
+  // es el que está tomando en cuenta (por defecto, el código principal).
+  function renderCodigoCelda(it) {
+    const alternos = it.codigosAlternos || [];
+    if (alternos.length === 0) {
+      return <div style={{ fontFamily: "var(--mono)", fontSize: 13 }}>{it.codigo}</div>;
+    }
+    const opciones = [it.codigo, ...alternos];
+    const seleccionado = it.codigoUsado || it.codigo;
+    return (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+        {opciones.map(c => {
+          const activo = seleccionado === c;
+          const estiloBase = {
+            fontFamily: "var(--mono)", fontSize: 12, padding: "2px 7px", borderRadius: 6,
+            border: `1px solid ${activo ? "var(--teal)" : "var(--border)"}`,
+            background: activo ? "rgba(63,198,193,0.12)" : "transparent",
+            color: activo ? "var(--teal)" : "var(--muted)", fontWeight: activo ? 700 : 400
+          };
+          return puedeMarcar ? (
+            <button key={c} type="button" style={{ ...estiloBase, cursor: "pointer" }}
+              title="Marcar como el código que se está tomando en cuenta"
+              onClick={() => updateItemCheck(it.id, { codigoUsado: c })}>
+              {c}
+            </button>
+          ) : (
+            <span key={c} style={estiloBase}>{c}</span>
+          );
+        })}
+      </div>
+    );
+  }
+
   function renderFilaItem(it) {
+    const tieneDetalle = !!(it.texto && it.texto.trim());
     return (
       <tr className="item-row" key={it.id}>
         <td style={{ width: 34, fontFamily: "var(--mono)", fontSize: 13, color: "var(--muted)" }}>{it.cantidad}</td>
         <td>
-          <div style={{ fontFamily: "var(--mono)", fontSize: 13 }}>
-            {it.codigo}
-            {it.codigosAlternos && it.codigosAlternos.length > 0 && (
-              <span style={{ color: "var(--muted)", fontSize: 11.5 }}> / {it.codigosAlternos.join(" / ")}</span>
-            )}
-          </div>
+          {renderCodigoCelda(it)}
           {it.piso && <div style={{ fontSize: 11, color: "var(--muted)" }}>Piso: {it.piso}</div>}
         </td>
         <td style={{ width: puedeMarcar ? 260 : 0 }}>
           {puedeMarcar ? (
             <div className="check-controls">
-              <button className={`chk-btn ${it.check === "ok" ? "active-ok" : ""}`}
-                onClick={() => updateItemCheck(it.id, { check: it.check === "ok" ? null : "ok" })}>
-                <CheckCircle2 size={16} />
-              </button>
-              <button className={`chk-btn ${it.check === "no" ? "active-no" : ""}`}
-                onClick={() => updateItemCheck(it.id, { check: it.check === "no" ? null : "no" })}>
-                <XCircle size={16} />
-              </button>
-              {it.texto && <AlertTriangle size={16} color="var(--amber)" style={{ flexShrink: 0 }} title="Este detalle le va a salir marcado con alerta al vendedor" />}
-              <input type="text" className="txt-mini" placeholder="Detalle (ej: llegó dañado, faltan piezas...)" value={it.texto || ""}
-                onChange={e => updateItemCheck(it.id, { texto: e.target.value })} />
+              {tieneDetalle ? (
+                <>
+                  <AlertTriangle size={16} color="var(--amber)" style={{ flexShrink: 0 }} title="Detalle registrado — ya cuenta como advertencia, no hace falta marcar check o X" />
+                  <input type="text" className="txt-mini" placeholder="Detalle (ej: llegó dañado, faltan piezas...)" value={it.texto || ""}
+                    onChange={e => handleDetalleChange(it, e.target.value)} />
+                  <button type="button" className="chk-btn" title="Quitar el detalle y marcar manualmente"
+                    onClick={() => updateItemCheck(it.id, { texto: "" })}>
+                    <X size={14} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className={`chk-btn ${it.check === "ok" ? "active-ok" : ""}`}
+                    onClick={() => updateItemCheck(it.id, { check: it.check === "ok" ? null : "ok" })}>
+                    <CheckCircle2 size={16} />
+                  </button>
+                  <button className={`chk-btn ${it.check === "no" ? "active-no" : ""}`}
+                    onClick={() => updateItemCheck(it.id, { check: it.check === "no" ? null : "no" })}>
+                    <XCircle size={16} />
+                  </button>
+                  <input type="text" className="txt-mini" placeholder="Detalle (ej: llegó dañado, faltan piezas...)" value={it.texto || ""}
+                    onChange={e => handleDetalleChange(it, e.target.value)} />
+                </>
+              )}
             </div>
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              {it.texto ? (
+              {tieneDetalle ? (
                 <AlertTriangle size={16} color="var(--amber)" style={{ flexShrink: 0 }} />
               ) : (
                 <>
@@ -508,7 +628,7 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
                   {it.check === "no" && <XCircle size={16} color="var(--red)" />}
                 </>
               )}
-              {it.texto && <span style={{ fontSize: 11.5, color: "var(--amber)", fontWeight: 700 }}>{it.texto}</span>}
+              {tieneDetalle && <span style={{ fontSize: 11.5, color: "var(--amber)", fontWeight: 700 }}>{it.texto}</span>}
             </div>
           )}
         </td>
@@ -817,17 +937,36 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           {(pedido.estado === "tomado" || pedido.estado === "finalizado") && (
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
               <div className="helper-text" style={{ marginBottom: 8, textAlign: "left" }}>
-                ¿Faltó algo? Sube una foto con más códigos — el pedido vuelve a "Pendiente", bajo el subtítulo "Adicionales".
+                ¿Faltó algo? Sube una foto o un Excel con más códigos — el pedido vuelve a "Pendiente", bajo el subtítulo "Adicionales".
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button className="btn btn-outline btn-sm" style={{ flex: 1 }} disabled={agregandoAdicional} onClick={() => setCamaraAdicionalAbierta(true)}>
-                  {agregandoAdicional ? <Loader2 className="spin" size={14} /> : (<><ScanLine size={13} /> Cámara</>)}
-                </button>
-                <button className="btn btn-outline btn-sm" style={{ flex: 1 }} disabled={agregandoAdicional} onClick={() => fileRefAdicional.current?.click()}>
-                  <ImageIcon size={13} /> Subir foto
-                </button>
-                <input ref={fileRefAdicional} type="file" accept="image/*" capture="environment" style={{ display: "none" }}
-                  onChange={e => { procesarArchivoAdicional(e.target.files[0]); e.target.value = ""; }} />
+              <div
+                onDragOver={e => { e.preventDefault(); setArrastrandoAdicional(true); }}
+                onDragLeave={() => setArrastrandoAdicional(false)}
+                onDrop={manejarDropAdicional}
+                style={{
+                  border: `1.5px dashed ${arrastrandoAdicional ? "var(--teal)" : "var(--border)"}`,
+                  borderRadius: 10, padding: 10,
+                  background: arrastrandoAdicional ? "rgba(63,198,193,0.06)" : "transparent"
+                }}
+              >
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button className="btn btn-outline btn-sm" style={{ flex: 1 }} disabled={agregandoAdicional} onClick={() => setCamaraAdicionalAbierta(true)}>
+                    {agregandoAdicional ? <Loader2 className="spin" size={14} /> : (<><ScanLine size={13} /> Cámara</>)}
+                  </button>
+                  <button className="btn btn-outline btn-sm" style={{ flex: 1 }} disabled={agregandoAdicional} onClick={() => fileRefAdicional.current?.click()}>
+                    <ImageIcon size={13} /> Subir foto
+                  </button>
+                  <button className="btn btn-outline btn-sm" style={{ flex: 1 }} disabled={agregandoAdicional} onClick={() => fileRefAdicionalExcel.current?.click()}>
+                    <FileSpreadsheet size={13} /> Excel
+                  </button>
+                  <input ref={fileRefAdicional} type="file" accept="image/*" capture="environment" style={{ display: "none" }}
+                    onChange={e => { procesarArchivoAdicional(e.target.files[0]); e.target.value = ""; }} />
+                  <input ref={fileRefAdicionalExcel} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
+                    onChange={e => { agregarAdicionalesDesdeExcel(e.target.files[0]); e.target.value = ""; }} />
+                </div>
+                <div className="helper-text" style={{ marginTop: 8, textAlign: "center" }}>
+                  o arrastra aquí una foto o un archivo Excel
+                </div>
               </div>
             </div>
           )}
@@ -920,12 +1059,9 @@ export default function DetallePedido({ pedidoId, user, onVolver }) {
           <div className="cajas-count-badge" style={{ marginBottom: 12 }}>
             <Boxes size={13} /> {pedido.cajas} caja(s) preparadas
           </div>
-          <div className="helper-text" style={{ marginTop: -6, marginBottom: 12 }}>
+          <div className="helper-text" style={{ marginTop: -6 }}>
             Finalizado el {fmtFechaHora(pedido.finalizadoEn)}
           </div>
-          <button className="btn btn-teal btn-block" onClick={() => descargarEtiquetas(pedido)}>
-            <Download size={15} /> Descargar etiquetas para las cajas
-          </button>
         </div>
       )}
 

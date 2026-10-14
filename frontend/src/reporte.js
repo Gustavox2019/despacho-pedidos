@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 function fechaCorta(ts) {
   const d = new Date(ts);
@@ -72,10 +72,47 @@ function nombreArchivo(ext) {
   return `reporte-pedidos-${hoy}.${ext}`;
 }
 
-// CSV (se abre directo en Excel / Google Sheets)
+// Dispara la descarga de un archivo ya armado en memoria (ArrayBuffer/Blob).
+function descargarBuffer(buffer, nombre, mime) {
+  const blob = new Blob([buffer], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nombre;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+const ROJO = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5D0D0" } };
+const ROJO_TEXTO = { color: { argb: "FFB3261E" }, bold: true };
+
+// Agrega las filas a una hoja de exceljs y resalta en rojo cualquier celda
+// de la columna "Check" que diga "NO" (se identifica por el encabezado
+// exacto, así sirve tanto para el reporte general como para el de un pedido).
+function escribirFilasConResaltado(hoja, filas) {
+  const encabezado = filas[0];
+  const colCheck = encabezado.findIndex(h => String(h).toLowerCase() === "check");
+  filas.forEach((fila, i) => {
+    const row = hoja.addRow(fila);
+    if (i === 0) {
+      row.font = { bold: true };
+      return;
+    }
+    if (colCheck !== -1) {
+      const celda = row.getCell(colCheck + 1);
+      if (String(celda.value).toUpperCase() === "NO") {
+        celda.fill = ROJO;
+        celda.font = ROJO_TEXTO;
+      }
+    }
+  });
+}
+
+// CSV (se abre directo en Excel / Google Sheets) — el color no existe en
+// texto plano, así que en CSV la columna Check se mantiene solo como texto.
 export function exportarReporteCSV(pedidos, filtro) {
   const filas = construirFilas(pedidos, filtro);
-  const csv = "\uFEFF" + filas.map(fila => fila.map(csvEscape).join(";")).join("\n");
+  const csv = "﻿" + filas.map(fila => fila.map(csvEscape).join(";")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -85,22 +122,25 @@ export function exportarReporteCSV(pedidos, filtro) {
   URL.revokeObjectURL(url);
 }
 
-// Excel real (.xlsx), con columnas ajustadas
-export function exportarReporteXLSX(pedidos, filtro) {
+// Excel real (.xlsx), con columnas ajustadas y la columna "Check" en rojo
+// cuando dice "NO".
+export async function exportarReporteXLSX(pedidos, filtro) {
   const filas = construirFilas(pedidos, filtro);
-  const hoja = XLSX.utils.aoa_to_sheet(filas);
-  hoja["!cols"] = [
-    { wch: 11 }, { wch: 11 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 7 },
-    { wch: 9 }, { wch: 16 }, { wch: 10 }, { wch: 7 }, { wch: 24 }
+  const workbook = new ExcelJS.Workbook();
+  const hoja = workbook.addWorksheet("Pedidos");
+  hoja.columns = [
+    { width: 11 }, { width: 11 }, { width: 22 }, { width: 18 }, { width: 18 }, { width: 7 },
+    { width: 9 }, { width: 16 }, { width: 10 }, { width: 7 }, { width: 24 }
   ];
-  const libro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro, hoja, "Pedidos");
-  XLSX.writeFile(libro, nombreArchivo("xlsx"));
+  escribirFilasConResaltado(hoja, filas);
+  const buffer = await workbook.xlsx.writeBuffer();
+  descargarBuffer(buffer, nombreArchivo("xlsx"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 }
 
 // Exporta UN solo pedido a Excel (para el vendedor o el almacén, con el
-// detalle completo del checklist tal como quedó).
-export function exportarPedidoXLSX(pedido) {
+// detalle completo del checklist tal como quedó) — también con la columna
+// "Check" en rojo cuando dice "NO".
+export async function exportarPedidoXLSX(pedido) {
   const filas = [
     ["Pedido", pedido.id],
     ["Cliente", pedido.cliente],
@@ -111,23 +151,27 @@ export function exportarPedidoXLSX(pedido) {
     ["Cajas", pedido.cajas || ""],
     ["Creado", fechaCorta(pedido.creadoEn)],
     ["Finalizado", pedido.finalizadoEn ? fechaCorta(pedido.finalizadoEn) : ""],
-    [],
-    ["Cantidad", "Codigo", "Check", "Detalle"]
+    []
   ];
+  const filaEncabezado = ["Cantidad", "Codigo", "Check", "Detalle"];
+  const filasItems = [filaEncabezado];
   for (const it of pedido.items) {
     const codigoCompleto = it.codigosAlternos && it.codigosAlternos.length > 0
-      ? `${it.codigo} / ${it.codigosAlternos.join(" / ")}`
+      ? `${it.codigoUsado || it.codigo} / ${it.codigosAlternos.filter(a => a !== it.codigoUsado).join(" / ")}`
       : it.codigo;
-    filas.push([
+    filasItems.push([
       it.cantidad,
       codigoCompleto,
       it.check === "ok" ? "OK" : it.check === "no" ? "NO" : "",
       it.texto || ""
     ]);
   }
-  const hoja = XLSX.utils.aoa_to_sheet(filas);
-  hoja["!cols"] = [{ wch: 12 }, { wch: 20 }, { wch: 8 }, { wch: 30 }];
-  const libro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro, hoja, pedido.id);
-  XLSX.writeFile(libro, `${pedido.id}.xlsx`);
+
+  const workbook = new ExcelJS.Workbook();
+  const hoja = workbook.addWorksheet(pedido.id);
+  hoja.columns = [{ width: 14 }, { width: 24 }, { width: 8 }, { width: 30 }];
+  filas.forEach(fila => hoja.addRow(fila));
+  escribirFilasConResaltado(hoja, filasItems);
+  const buffer = await workbook.xlsx.writeBuffer();
+  descargarBuffer(buffer, `${pedido.id}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 }

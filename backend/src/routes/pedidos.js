@@ -143,9 +143,15 @@ router.post("/", async (req, res) => {
 
 // Listar pedidos (opcionalmente filtrados por vendedor, u "ocultando"
 // el contenido de los que no son del vendedor que consulta).
+// Cuántos días atrás se consideran "recientes" para el refresco normal
+// (pedidos ya cerrados — finalizado/despachado/cancelado — más viejos que
+// esto no se mandan en el refresco de cada 15s; solo se piden aparte
+// cuando se entra a Estadísticas, Faltantes o Exportar con "completo=1").
+const DIAS_RECIENTES = 4;
+
 router.get("/", async (req, res) => {
   try {
-    const { vendedorId, viewerId, ocultarAjenos } = req.query;
+    const { vendedorId, viewerId, ocultarAjenos, completo } = req.query;
     // La foto no se necesita en el listado (pesaría de más); solo se pide
     // cuando se consulta un pedido puntual. "tiene_foto" es una columna
     // calculada en la base de datos.
@@ -161,6 +167,20 @@ router.get("/", async (req, res) => {
       .order("anclado", { ascending: false })
       .order("creado_en", { ascending: false });
     if (vendedorId) query = query.eq("vendedor_id", vendedorId);
+
+    // Sin "completo=1" (el caso normal: el refresco automático de cada
+    // 15s), no se trae TODO el historial — solo lo operativamente
+    // relevante: pedidos todavía pendientes/en proceso, lo cerrado hace
+    // pocos días, y lo anclado (fijado). El historial completo (para
+    // Estadísticas, Faltantes y Exportar) se pide aparte, solo cuando se
+    // abren esas pantallas — así el poll de todo el día no carga cada vez
+    // más pesado a medida que se acumulan meses de pedidos.
+    if (completo !== "1") {
+      const corte = Date.now() - DIAS_RECIENTES * 24 * 60 * 60 * 1000;
+      query = query.or(
+        `estado.in.(pendiente,tomado),anclado.eq.true,creado_en.gte.${corte}`
+      );
+    }
 
     const { data, error } = await query;
     if (error) throw error;

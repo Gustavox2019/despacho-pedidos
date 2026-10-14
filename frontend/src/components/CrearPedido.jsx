@@ -17,6 +17,7 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
   const [items, setItems] = useState([]);
   const [enviando, setEnviando] = useState(false);
   const [tipo, setTipo] = useState(null); // "separar" | "confirmar" — lo elige el vendedor antes de enviar
+  const [arrastrando, setArrastrando] = useState(false);
   const fileRefCamara = useRef(null);
   const fileRefGaleria = useRef(null);
   const fileRefExcel = useRef(null);
@@ -129,6 +130,20 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
   }
   function addManualRow() {
     setItems(prev => [...prev, { id: uid("it"), cantidad: 1, codigo: "", matchStatus: "manual", piso: "" }]);
+  }
+
+  // Arrastrar y soltar archivos (fotos y/o un Excel juntos) sobre la zona
+  // de carga — detecta el tipo de cada uno y lo manda al flujo que
+  // corresponda, igual que si se hubieran elegido con los botones.
+  function manejarDrop(e) {
+    e.preventDefault();
+    setArrastrando(false);
+    const archivos = Array.from(e.dataTransfer.files || []);
+    if (archivos.length === 0) return;
+    const excel = archivos.find(f => /\.(xlsx|xls|csv)$/i.test(f.name));
+    const imagenes = archivos.filter(f => f.type && f.type.startsWith("image/"));
+    if (excel) procesarExcel(excel);
+    if (imagenes.length > 0) procesarImagenes(imagenes);
   }
 
   const gruposRepetidos = useMemo(() => {
@@ -244,7 +259,18 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
           <input type="text" value={cliente} onChange={e => setCliente(e.target.value)} placeholder="Obligatorio" />
         </div>
 
-        <div className="field cg-media">
+        <div
+          className="field cg-media"
+          onDragOver={e => { e.preventDefault(); setArrastrando(true); }}
+          onDragLeave={() => setArrastrando(false)}
+          onDrop={manejarDrop}
+          style={{
+            border: `1.5px dashed ${arrastrando ? "var(--teal)" : "transparent"}`,
+            borderRadius: 10,
+            background: arrastrando ? "rgba(63,198,193,0.06)" : "transparent",
+            transition: "background .15s, border-color .15s"
+          }}
+        >
           <label>Lista del pedido</label>
           {fotos.length === 0 ? (
             <div className="upload-options">
@@ -297,7 +323,7 @@ export default function CrearPedido({ onCreado, onCancelar, errorEnvio }) {
             </>
           )}
           <div className="helper-text" style={{ marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-            <Clipboard size={12} /> También puedes pegar una o varias imágenes copiadas con Ctrl+V
+            <Clipboard size={12} /> También puedes pegar una o varias imágenes copiadas con Ctrl+V, o arrastrar aquí tus fotos o tu Excel
           </div>
           {/* capture="environment" abre la cámara directamente en celulares */}
           <input ref={fileRefCamara} type="file" accept="image/*" capture="environment" style={{ display: "none" }}

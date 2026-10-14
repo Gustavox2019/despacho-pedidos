@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Loader2, Plus, FileSpreadsheet, FileText, BarChart3, Bell, PackageX } from "lucide-react";
 import "./styles.css";
 import { api } from "./api.js";
@@ -12,7 +12,7 @@ import DetallePedido from "./components/DetallePedido.jsx";
 import EstadisticasPanel from "./components/EstadisticasPanel.jsx";
 import FaltantesPanel from "./components/FaltantesPanel.jsx";
 
-function MenuExportar({ pedidos }) {
+function MenuExportar({ pedidos, onAbrir }) {
   const [abierto, setAbierto] = useState(false);
   const [todaLaData, setTodaLaData] = useState(false);
   const [fechaDesde, setFechaDesde] = useState("");
@@ -34,7 +34,8 @@ function MenuExportar({ pedidos }) {
 
   return (
     <div style={{ position: "relative" }}>
-      <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }} onClick={() => setAbierto(v => !v)}>
+      <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }}
+        onClick={() => { setAbierto(v => !v); if (onAbrir) onAbrir(); }}>
         <FileSpreadsheet size={13} /> Exportar
       </button>
       {abierto && (
@@ -89,6 +90,13 @@ export default function App() {
   const [pedidoActivoId, setPedidoActivoId] = useState(null);
   const [pedidos, setPedidos] = useState([]);
   const [cargandoPedidos, setCargandoPedidos] = useState(true);
+  // Historial completo (todos los pedidos, no solo los operativamente
+  // relevantes) — se carga aparte y solo bajo demanda, al entrar a
+  // Estadísticas, Faltantes o abrir el menú de Exportar. No se mantiene
+  // en el poll normal de cada 15s para no cargarlo cada vez más pesado
+  // a medida que se acumula el historial.
+  const [pedidosCompleto, setPedidosCompleto] = useState(null);
+  const [cargandoHistorial, setCargandoHistorial] = useState(false);
   const [notifPermiso, setNotifPermiso] = useState("default");
   const [mostrarAvisoNotif, setMostrarAvisoNotif] = useState(false);
 
@@ -139,6 +147,21 @@ export default function App() {
       setPedidos(lista);
     } catch (e) { /* se reintenta en el próximo poll */ }
     setCargandoPedidos(false);
+  }, [user]);
+
+  // Se usa solo al abrir Estadísticas, Faltantes o Exportar — trae el
+  // historial completo una vez (no en cada poll de 15s).
+  const cargarHistorialCompleto = useCallback(async () => {
+    if (!user) return;
+    setCargandoHistorial(true);
+    try {
+      const opciones = user.rol === "vendedor"
+        ? { viewerId: user.id, ocultarAjenos: true, completo: true }
+        : { completo: true };
+      const lista = await api.listarPedidos(opciones);
+      setPedidosCompleto(lista);
+    } catch (e) { /* se puede reintentar al reabrir la pantalla */ }
+    setCargandoHistorial(false);
   }, [user]);
 
   useEffect(() => {
@@ -200,6 +223,18 @@ export default function App() {
   const notifPedidosCount = user.rol === "almacenero"
     ? pedidos.filter(p => p.estado === "pendiente" && !p.vistoPorAlmacen).length
     : 0;
+  // Carga de trabajo del almacén en este momento: cuántos pedidos tiene
+  // tomados cada almacenero — se ve en la pantalla principal para saber
+  // quién tiene más encima.
+  const cargaAlmaceneros = useMemo(() => {
+    const mapa = new Map();
+    for (const p of pedidos) {
+      if (p.estado === "tomado" && p.almaceneroNombre) {
+        mapa.set(p.almaceneroNombre, (mapa.get(p.almaceneroNombre) || 0) + 1);
+      }
+    }
+    return [...mapa.entries()].sort((a, b) => b[1] - a[1]);
+  }, [pedidos]);
   const notifChatCount = pedidos.filter(p => user.rol === "vendedor"
     ? (p.vendedorId === user.id && !p.chatVistoVendedor)
     : (p.almaceneroId === user.id && !p.chatVistoAlmacen)
@@ -243,17 +278,31 @@ export default function App() {
               </div>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
-              <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }} onClick={() => setVista("estadisticas")}>
+              <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }}
+                onClick={() => { setVista("estadisticas"); cargarHistorialCompleto(); }}>
                 <BarChart3 size={13} /> Estadísticas
               </button>
               {user.rol === "almacenero" && (
-                <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }} onClick={() => setVista("faltantes")}>
+                <button className="btn btn-outline btn-sm" style={{ whiteSpace: "nowrap" }}
+                  onClick={() => { setVista("faltantes"); cargarHistorialCompleto(); }}>
                   <PackageX size={13} /> Faltantes
                 </button>
               )}
-              {user.rol === "almacenero" && <MenuExportar pedidos={pedidos} />}
+              {user.rol === "almacenero" && (
+                <MenuExportar pedidos={pedidosCompleto || []} onAbrir={cargarHistorialCompleto} />
+              )}
             </div>
           </div>
+          {cargaAlmaceneros.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, margin: "10px 0 2px" }}>
+              <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 800 }}>
+                En almacén ahora:
+              </span>
+              {cargaAlmaceneros.map(([nombre, cant]) => (
+                <span key={nombre} className="name-chip almacenero">{nombre}: {cant} pedido{cant > 1 ? "s" : ""}</span>
+              ))}
+            </div>
+          )}
           <ListaPedidos pedidos={pedidos} user={user} onOpen={abrirPedido} loading={cargandoPedidos} onPedidoActualizado={cargarPedidos} />
         </div>
       )}
@@ -263,7 +312,11 @@ export default function App() {
           <button className="btn btn-outline btn-sm" style={{ marginBottom: 16 }} onClick={() => setVista("home")}>
             ← Volver
           </button>
-          <EstadisticasPanel pedidos={pedidos} />
+          {cargandoHistorial && !pedidosCompleto ? (
+            <div style={{ textAlign: "center", padding: 30, color: "var(--muted)" }}>Cargando historial…</div>
+          ) : (
+            <EstadisticasPanel pedidos={pedidosCompleto || []} />
+          )}
         </div>
       )}
 
@@ -272,7 +325,11 @@ export default function App() {
           <button className="btn btn-outline btn-sm" style={{ marginBottom: 16 }} onClick={() => setVista("home")}>
             ← Volver
           </button>
-          <FaltantesPanel pedidos={pedidos} />
+          {cargandoHistorial && !pedidosCompleto ? (
+            <div style={{ textAlign: "center", padding: 30, color: "var(--muted)" }}>Cargando historial…</div>
+          ) : (
+            <FaltantesPanel pedidos={pedidosCompleto || []} />
+          )}
         </div>
       )}
 
